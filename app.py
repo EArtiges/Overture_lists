@@ -40,7 +40,7 @@ def init_session_state():
         # Default path - can be overridden via environment variable
         st.session_state.parquet_path = os.getenv(
             'OVERTURE_PARQUET_PATH',
-            's3://overturemaps-us-west-2/release/2024-11-13.0/theme=admins/type=*/*.parquet'
+            's3://overturemaps-us-west-2/release/2024-12-18.0/theme=divisions/type=division/*.parquet'
         )
 
 
