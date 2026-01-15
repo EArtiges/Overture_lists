@@ -254,6 +254,7 @@ def render_map_section(query_engine, selected_boundary):
     else:
         # Note: Geometry display temporarily disabled - division type doesn't include geometry
         # Would need to query division_area type separately
+        # TODO: add a query to get the polygon from the division_area dataset and render it
         st.info(f"Selected: **{selected_boundary['name']}** ({selected_boundary['subtype']})")
         st.session_state.selected_boundary = selected_boundary
         m = create_map()

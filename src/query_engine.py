@@ -65,33 +65,6 @@ class OvertureQueryEngine:
             return []
 
     @st.cache_data(ttl=3600)
-    def get_subtypes(_self, country: str) -> List[str]:
-        """
-        Get distinct subtypes (division types) for a given country.
-
-        Args:
-            country: Country code (e.g., 'US', 'GB')
-
-        Returns:
-            Sorted list of subtypes (e.g., 'country', 'region', 'county')
-        """
-        conn = _self._get_connection()
-        query = f"""
-            SELECT DISTINCT subtype
-            FROM read_parquet('{_self.parquet_path}')
-            WHERE country = ?
-              AND subtype IS NOT NULL
-              AND class = 'land'
-            ORDER BY subtype
-        """
-        try:
-            result = conn.execute(query, [country]).fetchall()
-            return [row[0] for row in result]
-        except Exception as e:
-            st.error(f"Error fetching subtypes: {e}")
-            return []
-
-    @st.cache_data(ttl=3600)
     def get_country_division(_self, country: str) -> Optional[Dict]:
         """
         Get the country division record for a given country code.
@@ -106,13 +79,9 @@ class OvertureQueryEngine:
         query = f"""
             SELECT
                 id as division_id,
-                names.primary as name,
-                subtype,
-                country,
-                parent_division_id
+                names.primary as name
             FROM read_parquet('{_self.parquet_path}')
             WHERE country = ?
-              AND class = 'land'
               AND subtype = 'country'
             LIMIT 1
         """
@@ -147,7 +116,6 @@ class OvertureQueryEngine:
                 parent_division_id
             FROM read_parquet('{_self.parquet_path}')
             WHERE parent_division_id = ?
-              AND class = 'land'
             ORDER BY name
             LIMIT 1000
         """
