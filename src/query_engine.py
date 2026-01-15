@@ -128,32 +128,46 @@ class OvertureQueryEngine:
             return pd.DataFrame(columns=['division_id', 'name', 'subtype', 'country', 'parent_division_id'])
 
     @st.cache_data(ttl=3600)
-    def get_geometry(_self, gers_id: str) -> Optional[Dict[str, Any]]:
+    def get_geometry(_self, division_id: str) -> Optional[Dict[str, Any]]:
         """
-        Get geometry for a specific boundary as GeoJSON.
+        Get geometry for a specific division from division_area dataset.
 
         Args:
-            gers_id: GERS ID of the boundary
+            division_id: Division ID
 
         Returns:
-            GeoJSON geometry dict or None if not found
+            GeoJSON geometry dict with geometry and name, or None if not found
         """
         conn = _self._get_connection()
+
+        # Convert path from type=division to type=division_area
+        area_path = _self.parquet_path.replace('type=division', 'type=division_area')
+
         query = f"""
             SELECT
                 ST_AsGeoJSON(geometry) as geojson,
-                names.primary as name
-            FROM read_parquet('{_self.parquet_path}')
-            WHERE id = ?
+                division_id
+            FROM read_parquet('{area_path}')
+            WHERE division_id = ?
             LIMIT 1
         """
 
         try:
-            result = conn.execute(query, [gers_id]).fetchone()
+            result = conn.execute(query, [division_id]).fetchone()
             if result and result[0]:
+                # Get the name from the division dataset
+                division_query = f"""
+                    SELECT names.primary as name
+                    FROM read_parquet('{_self.parquet_path}')
+                    WHERE id = ?
+                    LIMIT 1
+                """
+                name_result = conn.execute(division_query, [division_id]).fetchone()
+                name = name_result[0] if name_result else "Unknown"
+
                 return {
                     'geometry': json.loads(result[0]),
-                    'name': result[1]
+                    'name': name
                 }
             return None
         except Exception as e:

@@ -252,12 +252,17 @@ def render_map_section(query_engine, selected_boundary):
         st.info("Select a boundary from the filters above to view it on the map")
         m = create_map()
     else:
-        # Note: Geometry display temporarily disabled - division type doesn't include geometry
-        # Would need to query division_area type separately
-        # TODO: add a query to get the polygon from the division_area dataset and render it
-        st.info(f"Selected: **{selected_boundary['name']}** ({selected_boundary['subtype']})")
-        st.session_state.selected_boundary = selected_boundary
-        m = create_map()
+        with st.spinner(f"Loading geometry for {selected_boundary['name']}..."):
+            geometry_data = query_engine.get_geometry(selected_boundary['division_id'])
+
+            if geometry_data is None:
+                st.warning(f"Could not load geometry for {selected_boundary['name']}")
+                st.info(f"Selected: **{selected_boundary['name']}** ({selected_boundary['subtype']})")
+                m = create_map()
+            else:
+                st.success(f"Displaying: **{selected_boundary['name']}** ({selected_boundary['subtype']})")
+                m = create_map(geometry_data)
+                st.session_state.selected_boundary = selected_boundary
 
     # Render map
     st_folium(m, width=1200, height=500, key="boundary_map")
