@@ -92,38 +92,92 @@ class OvertureQueryEngine:
             return []
 
     @st.cache_data(ttl=3600)
-    def get_boundaries(
-        _self,
-        country: str,
-        subtype: Optional[str] = None,
-        parent_division_id: Optional[str] = None
-    ) -> pd.DataFrame:
+    def get_top_level_divisions(_self, country: str) -> pd.DataFrame:
         """
-        Get boundaries matching the given filters.
+        Get top-level divisions for a country (divisions with no parent).
 
         Args:
             country: Country code
-            subtype: Division subtype filter (e.g., 'country', 'region', 'county') (optional)
-            parent_division_id: Parent division ID for hierarchical filtering (optional)
 
         Returns:
             DataFrame with columns: division_id, name, subtype, country, parent_division_id
         """
         conn = _self._get_connection()
+        query = f"""
+            SELECT
+                id as division_id,
+                names.primary as name,
+                subtype,
+                country,
+                parent_division_id
+            FROM read_parquet('{_self.parquet_path}')
+            WHERE country = ?
+              AND class = 'land'
+              AND parent_division_id IS NULL
+            ORDER BY name
+            LIMIT 1000
+        """
 
-        # Build query dynamically based on filters
-        where_clauses = ["country = ?", "class = 'land'"]
-        params = [country]
+        try:
+            result = conn.execute(query, [country]).fetchdf()
+            return result
+        except Exception as e:
+            st.error(f"Error fetching top-level divisions: {e}")
+            return pd.DataFrame(columns=['division_id', 'name', 'subtype', 'country', 'parent_division_id'])
 
-        if subtype is not None:
-            where_clauses.append("subtype = ?")
-            params.append(subtype)
+    @st.cache_data(ttl=3600)
+    def get_child_divisions(_self, parent_division_id: str) -> pd.DataFrame:
+        """
+        Get child divisions of a specific parent division.
 
-        if parent_division_id is not None:
-            where_clauses.append("parent_division_id = ?")
-            params.append(parent_division_id)
+        Args:
+            parent_division_id: Parent division ID
 
-        where_clause = " AND ".join(where_clauses)
+        Returns:
+            DataFrame with columns: division_id, name, subtype, country, parent_division_id
+        """
+        conn = _self._get_connection()
+        query = f"""
+            SELECT
+                id as division_id,
+                names.primary as name,
+                subtype,
+                country,
+                parent_division_id
+            FROM read_parquet('{_self.parquet_path}')
+            WHERE parent_division_id = ?
+              AND class = 'land'
+            ORDER BY name
+            LIMIT 1000
+        """
+
+        try:
+            result = conn.execute(query, [parent_division_id]).fetchdf()
+            return result
+        except Exception as e:
+            st.error(f"Error fetching child divisions: {e}")
+            return pd.DataFrame(columns=['division_id', 'name', 'subtype', 'country', 'parent_division_id'])
+
+    @st.cache_data(ttl=3600)
+    def get_all_divisions_by_filters(_self, country: str, division_ids: List[str]) -> pd.DataFrame:
+        """
+        Get all divisions matching a list of division IDs (for showing all descendants).
+
+        Args:
+            country: Country code
+            division_ids: List of division IDs in the current selection path
+
+        Returns:
+            DataFrame with all divisions matching the filters
+        """
+        conn = _self._get_connection()
+
+        if not division_ids:
+            # If no divisions in path, return top-level divisions
+            return _self.get_top_level_divisions(country)
+
+        # Get the last (most specific) division in the path
+        last_division_id = division_ids[-1]
 
         query = f"""
             SELECT
@@ -133,16 +187,16 @@ class OvertureQueryEngine:
                 country,
                 parent_division_id
             FROM read_parquet('{_self.parquet_path}')
-            WHERE {where_clause}
+            WHERE parent_division_id = ?
+              AND class = 'land'
             ORDER BY name
-            LIMIT 1000
         """
 
         try:
-            result = conn.execute(query, params).fetchdf()
+            result = conn.execute(query, [last_division_id]).fetchdf()
             return result
         except Exception as e:
-            st.error(f"Error fetching boundaries: {e}")
+            st.error(f"Error fetching divisions: {e}")
             return pd.DataFrame(columns=['division_id', 'name', 'subtype', 'country', 'parent_division_id'])
 
     @st.cache_data(ttl=3600)
