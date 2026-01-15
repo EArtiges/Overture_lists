@@ -98,98 +98,148 @@ def render_boundary_selector(query_engine):
     """Render hierarchical drill-down boundary selection UI."""
     st.subheader("🔍 Hierarchical Division Selection")
 
-    # Country selection
+    # Initialize selection state
+    if 'division_selections' not in st.session_state:
+        st.session_state.division_selections = []
+    if 'show_final_dropdown' not in st.session_state:
+        st.session_state.show_final_dropdown = False
+
+    # Step 1: Country selection
     countries = query_engine.get_countries()
     if not countries:
         st.warning("No countries found. Please check your Parquet data path.")
         return None
 
     selected_country = st.selectbox(
-        "1. Select Country",
+        "Select Country",
         options=[""] + countries,
         key="country_select"
     )
 
+    # Reset if country changes
+    if 'previous_country' not in st.session_state:
+        st.session_state.previous_country = None
+    if selected_country != st.session_state.previous_country:
+        st.session_state.previous_country = selected_country
+        st.session_state.division_selections = []
+        st.session_state.show_final_dropdown = False
+
     if not selected_country:
         st.info("Select a country to begin")
-        query_engine.reset()
         return None
 
-    # Update engine state when country changes
-    query_engine.set_country(selected_country)
+    # Step 2: Cascading division dropdowns based on parent_division_id
+    current_parent_id = None
+    level = 0
 
-    # Show breadcrumb path
-    if query_engine.selection_path:
-        st.write("**Selection Path:** " + selected_country + " → " + " → ".join([
-            f"{div['name']} ({div['subtype']})"
-            for div in query_engine.selection_path
-        ]))
-    else:
-        st.write(f"**Selection Path:** {selected_country}")
-
-    # Button to query divisions at current level (available immediately)
-    st.write("---")
-    col1, col2 = st.columns([2, 1])
-
-    with col2:
-        if st.button("🔍 Query All at This Level", use_container_width=True, type="primary"):
-            st.session_state.show_divisions = True
-            st.rerun()
-
-    with col1:
-        # Show helper text
-        if not query_engine.selection_path:
-            st.caption("Click to see all top-level divisions in this country")
+    while True:
+        # Query children of current parent
+        if current_parent_id is None:
+            # Get top-level divisions for country
+            divisions_df = query_engine.get_top_level_divisions(selected_country)
         else:
-            last_div = query_engine.selection_path[-1]
-            st.caption(f"Click to see all divisions within {last_div['name']}")
+            # Get children of selected parent
+            divisions_df = query_engine.get_child_divisions(current_parent_id)
 
-    # Display queried divisions
-    if st.session_state.get('show_divisions', False):
-        divisions_df = query_engine.query_at_current_level()
-
+        # If no divisions at this level, stop creating dropdowns
         if divisions_df.empty:
-            st.info("No subdivisions at this level")
-            st.session_state.show_divisions = False
+            break
+
+        # Create dropdown for this level
+        division_options = [""] + [
+            f"{row['name']} ({row['subtype']})"
+            for _, row in divisions_df.iterrows()
+        ]
+
+        selected_idx = st.selectbox(
+            f"Level {level + 2}: Select Division",
+            options=range(len(division_options)),
+            format_func=lambda x: division_options[x] if division_options[x] else "Select...",
+            key=f"level_{level}_dropdown"
+        )
+
+        # If nothing selected at this level, stop
+        if selected_idx == 0:
+            # Truncate selections beyond this level
+            st.session_state.division_selections = st.session_state.division_selections[:level]
+            break
+
+        # Get selected division
+        selected_division = divisions_df.iloc[selected_idx - 1].to_dict()
+
+        # Update selections list
+        if level < len(st.session_state.division_selections):
+            # User changed selection at this level - truncate
+            st.session_state.division_selections = st.session_state.division_selections[:level]
+
+        if level == len(st.session_state.division_selections):
+            # New selection at this level
+            st.session_state.division_selections.append(selected_division)
+
+        # Move to next level
+        current_parent_id = selected_division['division_id']
+        level += 1
+
+    # Show breadcrumb
+    if st.session_state.division_selections:
+        st.write("---")
+        breadcrumb = selected_country + " → " + " → ".join([
+            f"{div['name']} ({div['subtype']})"
+            for div in st.session_state.division_selections
+        ])
+        st.write(f"**Path:** {breadcrumb}")
+
+    # Step 3: "Query all at this level" button
+    st.write("---")
+    if st.button("🔍 Query All at This Level", use_container_width=True, type="primary"):
+        st.session_state.show_final_dropdown = True
+        st.rerun()
+
+    # Step 4: Final selection dropdown (created by button)
+    if st.session_state.show_final_dropdown:
+        # Query divisions at current level
+        if not st.session_state.division_selections:
+            # At country level - show top-level divisions
+            final_divisions = query_engine.get_top_level_divisions(selected_country)
+        else:
+            # Show children of last selected division
+            last_division = st.session_state.division_selections[-1]
+            final_divisions = query_engine.get_child_divisions(last_division['division_id'])
+
+        if final_divisions.empty:
+            st.info("No divisions at this level")
+            st.session_state.show_final_dropdown = False
         else:
             st.write("---")
-            st.write(f"**Available Divisions ({len(divisions_df)}):**")
+            st.write(f"**Select a division to view ({len(final_divisions)} available):**")
 
-            # Create display options
-            division_options = [""] + [
+            final_options = [""] + [
                 f"{row['name']} ({row['subtype']})"
-                for _, row in divisions_df.iterrows()
+                for _, row in final_divisions.iterrows()
             ]
 
-            selected_idx = st.selectbox(
-                "Select a division",
-                options=range(len(division_options)),
-                format_func=lambda x: division_options[x] if division_options[x] else "Select...",
-                key="division_dropdown"
+            final_idx = st.selectbox(
+                "Pick a division",
+                options=range(len(final_options)),
+                format_func=lambda x: final_options[x] if final_options[x] else "Select...",
+                key="final_division_select"
             )
 
-            if selected_idx > 0:
-                selected_division = divisions_df.iloc[selected_idx - 1].to_dict()
+            if final_idx > 0:
+                selected_for_map = final_divisions.iloc[final_idx - 1].to_dict()
 
-                # Show action buttons
                 col1, col2 = st.columns(2)
-
                 with col1:
                     if st.button("📍 View on Map", use_container_width=True):
-                        return selected_division
+                        st.session_state.show_final_dropdown = False
+                        return selected_for_map
 
                 with col2:
-                    if st.button("⬇️ Drill Down", use_container_width=True):
-                        query_engine.add_to_path(selected_division)
-                        st.session_state.show_divisions = False
+                    if st.button("⬇️ Drill Into This", use_container_width=True):
+                        # Add to selections and hide final dropdown
+                        st.session_state.division_selections.append(selected_for_map)
+                        st.session_state.show_final_dropdown = False
                         st.rerun()
-
-    # Add reset button
-    st.write("---")
-    if st.button("🔄 Reset Selection Path"):
-        query_engine.clear_path()
-        st.session_state.show_divisions = False
-        st.rerun()
 
     return None
 
