@@ -30,10 +30,6 @@ class OvertureQueryEngine:
         self.parquet_path = parquet_path
         self.conn = None
 
-        # Stateful hierarchical selection tracking
-        self.country = None
-        self.selection_path = []  # List of selected division dicts in hierarchy order
-
     def _get_connection(self):
         """Get or create DuckDB connection."""
         if self.conn is None:
@@ -96,15 +92,15 @@ class OvertureQueryEngine:
             return []
 
     @st.cache_data(ttl=3600)
-    def get_top_level_divisions(_self, country: str) -> pd.DataFrame:  # TODO remove this. we are now onnly using get_child_divisions.
+    def get_country_division(_self, country: str) -> Optional[Dict]:
         """
-        Get top-level divisions for a country (divisions with no parent).
+        Get the country division record for a given country code.
 
         Args:
-            country: Country code
+            country: Country code (e.g., 'BE', 'US')
 
         Returns:
-            DataFrame with columns: division_id, name, subtype, country, parent_division_id
+            Dict with country division info or None if not found
         """
         conn = _self._get_connection()
         query = f"""
@@ -117,17 +113,18 @@ class OvertureQueryEngine:
             FROM read_parquet('{_self.parquet_path}')
             WHERE country = ?
               AND class = 'land'
-              AND parent_division_id IS NULL
-            ORDER BY name
-            LIMIT 1000
+              AND subtype = 'country'
+            LIMIT 1
         """
 
         try:
             result = conn.execute(query, [country]).fetchdf()
-            return result
+            if not result.empty:
+                return result.iloc[0].to_dict()
+            return None
         except Exception as e:
-            st.error(f"Error fetching top-level divisions: {e}")
-            return pd.DataFrame(columns=['division_id', 'name', 'subtype', 'country', 'parent_division_id'])
+            st.error(f"Error fetching country division: {e}")
+            return None
 
     @st.cache_data(ttl=3600)
     def get_child_divisions(_self, parent_division_id: str) -> pd.DataFrame:
@@ -163,47 +160,6 @@ class OvertureQueryEngine:
             return pd.DataFrame(columns=['division_id', 'name', 'subtype', 'country', 'parent_division_id'])
 
     @st.cache_data(ttl=3600)
-    def get_all_divisions_by_filters(_self, country: str, division_ids: List[str]) -> pd.DataFrame:
-        """
-        Get all divisions matching a list of division IDs (for showing all descendants).
-
-        Args:
-            country: Country code
-            division_ids: List of division IDs in the current selection path
-
-        Returns:
-            DataFrame with all divisions matching the filters
-        """
-        conn = _self._get_connection()
-
-        if not division_ids:
-            # If no divisions in path, return top-level divisions
-            return _self.get_top_level_divisions(country)
-
-        # Get the last (most specific) division in the path
-        last_division_id = division_ids[-1]
-
-        query = f"""
-            SELECT
-                id as division_id,
-                names.primary as name,
-                subtype,
-                country,
-                parent_division_id
-            FROM read_parquet('{_self.parquet_path}')
-            WHERE parent_division_id = ?
-              AND class = 'land'
-            ORDER BY name
-        """
-
-        try:
-            result = conn.execute(query, [last_division_id]).fetchdf()
-            return result
-        except Exception as e:
-            st.error(f"Error fetching divisions: {e}")
-            return pd.DataFrame(columns=['division_id', 'name', 'subtype', 'country', 'parent_division_id'])
-
-    @st.cache_data(ttl=3600)
     def get_geometry(_self, gers_id: str) -> Optional[Dict[str, Any]]:
         """
         Get geometry for a specific boundary as GeoJSON.
@@ -235,53 +191,6 @@ class OvertureQueryEngine:
         except Exception as e:
             st.error(f"Error fetching geometry: {e}")
             return None
-
-    def set_country(self, country: str):
-        """
-        Set the country filter and reset selection path.
-
-        Args:
-            country: Country code (e.g., 'BE', 'US')
-        """
-        if self.country != country:
-            self.country = country
-            self.selection_path = []
-
-    def add_to_path(self, division: Dict):
-        """
-        Add a division to the selection path.
-
-        Args:
-            division: Division dict with keys: division_id, name, subtype, country, parent_division_id
-        """
-        self.selection_path.append(division)
-
-    def clear_path(self):
-        """Clear the selection path (but keep country)."""
-        self.selection_path = []
-
-    def reset(self):
-        """Reset all filters."""
-        self.country = None
-        self.selection_path = []
-
-    def query_at_current_level(self) -> pd.DataFrame:
-        """
-        Query divisions at the current hierarchical level based on set filters.
-
-        Returns:
-            DataFrame with divisions matching current filters
-        """
-        if self.country is None:
-            return pd.DataFrame(columns=['division_id', 'name', 'subtype', 'country', 'parent_division_id'])
-
-        if not self.selection_path:
-            # No divisions selected yet - return top-level divisions for country
-            return self.get_top_level_divisions(self.country)
-        else:
-            # Get children of the last selected division
-            last_division = self.selection_path[-1]
-            return self.get_child_divisions(last_division['division_id'])
 
     @st.cache_data(ttl=3600)
     def search_boundaries(_self, country: str, search_term: str) -> pd.DataFrame:

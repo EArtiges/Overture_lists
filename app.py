@@ -115,7 +115,6 @@ def render_boundary_selector(query_engine):
         options=[""] + countries,
         key="country_select"
     )
-    # TODO get the country division_id
 
     # Reset if country changes
     if 'previous_country' not in st.session_state:
@@ -129,19 +128,19 @@ def render_boundary_selector(query_engine):
         st.info("Select a country to begin")
         return None
 
+    # Get the country division_id
+    country_division = query_engine.get_country_division(selected_country)
+    if not country_division:
+        st.error(f"Could not find country division for {selected_country}")
+        return None
+
     # Step 2: Cascading division dropdowns based on parent_division_id
-    current_parent_id = None  # TODO that should be the country id found above
+    current_parent_id = country_division['division_id']
     level = 0
 
     while True:
-        # Query children of current parent
-        # TODO this is now always the same function call: query_engine.get_child_divisions(current_parent_id)
-        if current_parent_id is None:
-            # Get top-level divisions for country
-            divisions_df = query_engine.get_top_level_divisions(selected_country)
-        else:
-            # Get children of selected parent
-            divisions_df = query_engine.get_child_divisions(current_parent_id)
+        # Query children of current parent (always using get_child_divisions)
+        divisions_df = query_engine.get_child_divisions(current_parent_id)
 
         # If no divisions at this level, stop creating dropdowns
         if divisions_df.empty:
@@ -201,8 +200,8 @@ def render_boundary_selector(query_engine):
     if st.session_state.show_final_dropdown:
         # Query divisions at current level
         if not st.session_state.division_selections:
-            # At country level - show top-level divisions
-            final_divisions = query_engine.get_top_level_divisions(selected_country)
+            # At country level - show children of country
+            final_divisions = query_engine.get_child_divisions(country_division['division_id'])
         else:
             # Show children of last selected division
             last_division = st.session_state.division_selections[-1]
