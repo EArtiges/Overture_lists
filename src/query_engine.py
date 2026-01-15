@@ -16,7 +16,7 @@ import json
 
 
 class OvertureQueryEngine:
-    """Query engine for Overture Maps divisions data (administrative boundaries)."""
+    """Stateful query engine for Overture Maps divisions data (administrative boundaries)."""
 
     def __init__(self, parquet_path: str):
         """
@@ -29,6 +29,10 @@ class OvertureQueryEngine:
         """
         self.parquet_path = parquet_path
         self.conn = None
+
+        # Stateful hierarchical selection tracking
+        self.country = None
+        self.selection_path = []  # List of selected division dicts in hierarchy order
 
     def _get_connection(self):
         """Get or create DuckDB connection."""
@@ -231,6 +235,53 @@ class OvertureQueryEngine:
         except Exception as e:
             st.error(f"Error fetching geometry: {e}")
             return None
+
+    def set_country(self, country: str):
+        """
+        Set the country filter and reset selection path.
+
+        Args:
+            country: Country code (e.g., 'BE', 'US')
+        """
+        if self.country != country:
+            self.country = country
+            self.selection_path = []
+
+    def add_to_path(self, division: Dict):
+        """
+        Add a division to the selection path.
+
+        Args:
+            division: Division dict with keys: division_id, name, subtype, country, parent_division_id
+        """
+        self.selection_path.append(division)
+
+    def clear_path(self):
+        """Clear the selection path (but keep country)."""
+        self.selection_path = []
+
+    def reset(self):
+        """Reset all filters."""
+        self.country = None
+        self.selection_path = []
+
+    def query_at_current_level(self) -> pd.DataFrame:
+        """
+        Query divisions at the current hierarchical level based on set filters.
+
+        Returns:
+            DataFrame with divisions matching current filters
+        """
+        if self.country is None:
+            return pd.DataFrame(columns=['division_id', 'name', 'subtype', 'country', 'parent_division_id'])
+
+        if not self.selection_path:
+            # No divisions selected yet - return top-level divisions for country
+            return self.get_top_level_divisions(self.country)
+        else:
+            # Get children of the last selected division
+            last_division = self.selection_path[-1]
+            return self.get_child_divisions(last_division['division_id'])
 
     @st.cache_data(ttl=3600)
     def search_boundaries(_self, country: str, search_term: str) -> pd.DataFrame:

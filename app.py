@@ -43,12 +43,13 @@ def init_session_state():
             's3://overturemaps-us-west-2/release/2024-12-18.0/theme=divisions/type=division/*.parquet'
         )
 
-    # Hierarchical selection path
-    if 'selection_path' not in st.session_state:
-        st.session_state.selection_path = []  # List of selected division dicts
+    # Query engine instance (stateful)
+    if 'query_engine' not in st.session_state:
+        st.session_state.query_engine = None
 
-    if 'selected_country' not in st.session_state:
-        st.session_state.selected_country = None
+    # UI state
+    if 'show_divisions' not in st.session_state:
+        st.session_state.show_divisions = False
 
 
 def create_map(geometry_data: Optional[Dict] = None) -> folium.Map:
@@ -109,123 +110,86 @@ def render_boundary_selector(query_engine):
         key="country_select"
     )
 
-    # Reset path if country changes
-    if selected_country != st.session_state.selected_country:
-        st.session_state.selected_country = selected_country
-        st.session_state.selection_path = []
-        st.session_state.selected_boundary = None
-
     if not selected_country:
         st.info("Select a country to begin")
+        query_engine.reset()
         return None
 
-    # Get top-level divisions for the country
-    top_level_df = query_engine.get_top_level_divisions(selected_country)
-
-    if top_level_df.empty:
-        st.warning(f"No divisions found for {selected_country}")
-        return None
-
-    # Render hierarchical selection dropdowns
-    current_level = 0
-    available_divisions = top_level_df
-
-    while True:
-        level_num = current_level + 2  # Start from 2 since country is 1
-
-        # Create display options
-        division_options = [""] + [
-            f"{row['name']} ({row['subtype']})"
-            for _, row in available_divisions.iterrows()
-        ]
-
-        # Determine label based on level
-        if current_level == 0:
-            label = f"{level_num}. Select Top-Level Division"
-        else:
-            parent_name = st.session_state.selection_path[current_level - 1]['name']
-            label = f"{level_num}. Select Division within {parent_name}"
-
-        selected_idx = st.selectbox(
-            label,
-            options=range(len(division_options)),
-            format_func=lambda x: division_options[x] if division_options[x] else "Select...",
-            key=f"division_level_{current_level}"
-        )
-
-        if selected_idx == 0:
-            # No selection at this level - truncate path and stop
-            st.session_state.selection_path = st.session_state.selection_path[:current_level]
-            break
-
-        # User selected a division
-        selected_division = available_divisions.iloc[selected_idx - 1].to_dict()
-
-        # Update selection path
-        if current_level < len(st.session_state.selection_path):
-            # Selection changed at this level - truncate path
-            st.session_state.selection_path = st.session_state.selection_path[:current_level]
-
-        if current_level == len(st.session_state.selection_path):
-            # New level selected
-            st.session_state.selection_path.append(selected_division)
-
-        # Get children for next level
-        child_divisions = query_engine.get_child_divisions(selected_division['division_id'])
-
-        if child_divisions.empty:
-            # No more children - this is a leaf node
-            st.info(f"✓ Selected: **{selected_division['name']}** (no subdivisions)")
-            break
-
-        # Move to next level
-        current_level += 1
-        available_divisions = child_divisions
+    # Update engine state when country changes
+    query_engine.set_country(selected_country)
 
     # Show breadcrumb path
-    if st.session_state.selection_path:
-        st.write("---")
-        st.write("**Selection Path:**")
-        breadcrumb = " → ".join([
+    if query_engine.selection_path:
+        st.write("**Selection Path:** " + selected_country + " → " + " → ".join([
             f"{div['name']} ({div['subtype']})"
-            for div in st.session_state.selection_path
-        ])
-        st.write(breadcrumb)
+            for div in query_engine.selection_path
+        ]))
+    else:
+        st.write(f"**Selection Path:** {selected_country}")
 
-        # Button to query all divisions at current level
-        col1, col2 = st.columns([3, 1])
-        with col2:
-            if st.button("🔍 Show All at This Level", use_container_width=True):
-                # Get all children of the last selected division
-                last_division = st.session_state.selection_path[-1]
-                all_divisions = query_engine.get_child_divisions(last_division['division_id'])
+    # Button to query divisions at current level (available immediately)
+    st.write("---")
+    col1, col2 = st.columns([2, 1])
 
-                if not all_divisions.empty:
-                    st.session_state.available_for_selection = all_divisions
-                    st.rerun()
+    with col2:
+        if st.button("🔍 Query All at This Level", use_container_width=True, type="primary"):
+            st.session_state.show_divisions = True
+            st.rerun()
 
-    # Show available divisions for final selection
-    if 'available_for_selection' in st.session_state:
-        st.write("---")
-        st.write(f"**Available Divisions ({len(st.session_state.available_for_selection)}):**")
+    with col1:
+        # Show helper text
+        if not query_engine.selection_path:
+            st.caption("Click to see all top-level divisions in this country")
+        else:
+            last_div = query_engine.selection_path[-1]
+            st.caption(f"Click to see all divisions within {last_div['name']}")
 
-        divisions_to_show = st.session_state.available_for_selection
+    # Display queried divisions
+    if st.session_state.get('show_divisions', False):
+        divisions_df = query_engine.query_at_current_level()
 
-        # Create display options
-        final_options = [""] + [
-            f"{row['name']} ({row['subtype']})"
-            for _, row in divisions_to_show.iterrows()
-        ]
+        if divisions_df.empty:
+            st.info("No subdivisions at this level")
+            st.session_state.show_divisions = False
+        else:
+            st.write("---")
+            st.write(f"**Available Divisions ({len(divisions_df)}):**")
 
-        selected_final = st.selectbox(
-            "Select a division to view",
-            options=range(len(final_options)),
-            format_func=lambda x: final_options[x] if final_options[x] else "Select...",
-            key="final_selection"
-        )
+            # Create display options
+            division_options = [""] + [
+                f"{row['name']} ({row['subtype']})"
+                for _, row in divisions_df.iterrows()
+            ]
 
-        if selected_final > 0:
-            return divisions_to_show.iloc[selected_final - 1].to_dict()
+            selected_idx = st.selectbox(
+                "Select a division",
+                options=range(len(division_options)),
+                format_func=lambda x: division_options[x] if division_options[x] else "Select...",
+                key="division_dropdown"
+            )
+
+            if selected_idx > 0:
+                selected_division = divisions_df.iloc[selected_idx - 1].to_dict()
+
+                # Show action buttons
+                col1, col2 = st.columns(2)
+
+                with col1:
+                    if st.button("📍 View on Map", use_container_width=True):
+                        return selected_division
+
+                with col2:
+                    if st.button("⬇️ Drill Down", use_container_width=True):
+                        query_engine.add_to_path(selected_division)
+                        st.session_state.show_divisions = False
+                        st.rerun()
+
+    # Add reset button
+    st.write("---")
+    if st.button("🔄 Reset Selection Path"):
+        query_engine.clear_path()
+        st.session_state.show_divisions = False
+        st.rerun()
 
     return None
 
@@ -421,21 +385,23 @@ def main():
         # Show saved lists
         render_saved_lists_sidebar(storage)
 
-    # Initialize query engine
-    try:
-        query_engine = create_query_engine(st.session_state.parquet_path)
-    except Exception as e:
-        st.error(f"Error initializing query engine: {e}")
-        st.stop()
+    # Initialize query engine (or recreate if path changed)
+    if (st.session_state.query_engine is None or
+        st.session_state.query_engine.parquet_path != st.session_state.parquet_path):
+        try:
+            st.session_state.query_engine = create_query_engine(st.session_state.parquet_path)
+        except Exception as e:
+            st.error(f"Error initializing query engine: {e}")
+            st.stop()
 
     # Main content
     # Boundary selection section
-    selected_boundary = render_boundary_selector(query_engine)
+    selected_boundary = render_boundary_selector(st.session_state.query_engine)
 
     st.write("---")
 
     # Map visualization section
-    render_map_section(query_engine, selected_boundary)
+    render_map_section(st.session_state.query_engine, selected_boundary)
 
     st.write("---")
 
