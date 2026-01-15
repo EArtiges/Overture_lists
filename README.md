@@ -50,10 +50,21 @@ streamlit run app.py
 
 ### Parquet Data Path
 
-By default, the app connects to Overture Maps S3 data:
+By default, the app connects to Overture Maps S3 data using the **divisions** theme:
 ```
-s3://overturemaps-us-west-2/release/2024-11-13.0/theme=admins/type=*/*.parquet
+s3://overturemaps-us-west-2/release/2024-12-18.0/theme=divisions/type=division/*.parquet
 ```
+
+**Important:** The `admins` theme was deprecated in mid-2024 and replaced with `divisions`. Use the divisions theme for current releases.
+
+#### Path Structure
+- **Latest releases:** Use `theme=divisions/type=division`
+- **Legacy releases (pre-July 2024):** Use `theme=admins/type=*/`
+- **Area geometries:** Use `theme=divisions/type=division_area`
+- **All division types:** Use `theme=divisions/type=*`
+
+#### Release Versions
+Overture releases data monthly. Check [available releases](https://docs.overturemaps.org/release/) and update the date accordingly (format: `YYYY-MM-DD.0`).
 
 You can configure a different path:
 
@@ -184,10 +195,27 @@ When migrating from POC to production:
 
 ## Troubleshooting
 
-### "No countries found" error
-- Check that your Parquet path is correct
+### "No files found that match the pattern" or "No countries found" error
+
+**Common cause:** Using the deprecated `admins` theme or incorrect path pattern.
+
+**Solution:**
+1. Update your path to use the `divisions` theme:
+   ```
+   s3://overturemaps-us-west-2/release/2024-12-18.0/theme=divisions/type=division/*.parquet
+   ```
+
+2. If using an older release (pre-July 2024), use:
+   ```
+   s3://overturemaps-us-west-2/release/2024-06-13-beta.1/theme=admins/type=*/*.parquet
+   ```
+
+3. Check the [Overture releases page](https://docs.overturemaps.org/release/) to verify the release date exists
+
+**Other checks:**
 - Verify network access to S3 if using remote data
 - Ensure DuckDB httpfs extension is installed (automatic for S3)
+- Try a different release date if the current one is unavailable
 
 ### Map not displaying
 - Check browser console for JavaScript errors

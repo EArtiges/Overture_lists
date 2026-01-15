@@ -24,18 +24,18 @@ class ListStorage:
         self.data_dir = data_dir
         os.makedirs(data_dir, exist_ok=True)
 
-    def generate_list_id(self, initial_gers_ids: List[str]) -> str:
+    def generate_list_id(self, initial_division_ids: List[str]) -> str:
         """
         Generate a unique list ID based on initial boundary IDs and timestamp.
 
         Args:
-            initial_gers_ids: List of GERS IDs in the list
+            initial_division_ids: List of division IDs in the list
 
         Returns:
             MD5 hash string to use as list ID
         """
         timestamp = datetime.utcnow().isoformat()
-        content = f"{','.join(sorted(initial_gers_ids))}_{timestamp}"
+        content = f"{','.join(sorted(initial_division_ids))}_{timestamp}"
         return hashlib.md5(content.encode()).hexdigest()
 
     def save_list(
@@ -52,7 +52,7 @@ class ListStorage:
             list_name: Name of the list
             description: Description of the list
             boundaries: List of boundary dicts with keys:
-                        gers_id, name, admin_level, country
+                        division_id, name, subtype, country, parent_division_id
             list_id: Optional existing list ID (for updates)
 
         Returns:
@@ -60,8 +60,8 @@ class ListStorage:
         """
         # Generate new list ID if not provided
         if list_id is None:
-            gers_ids = [b['gers_id'] for b in boundaries]
-            list_id = self.generate_list_id(gers_ids)
+            division_ids = [b['division_id'] for b in boundaries]
+            list_id = self.generate_list_id(division_ids)
 
         list_data = {
             "list_id": list_id,

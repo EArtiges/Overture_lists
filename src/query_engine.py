@@ -1,8 +1,11 @@
 """
-DuckDB Query Engine for Overture Maps Admin Boundaries
+DuckDB Query Engine for Overture Maps Divisions
 
 This module provides cached query functions to efficiently query
-Overture Maps Foundation admin boundary data stored in Parquet format.
+Overture Maps Foundation divisions data (administrative boundaries)
+stored in Parquet format.
+
+Note: Uses the 'divisions' theme (replaces deprecated 'admins' theme).
 """
 
 import duckdb
@@ -13,15 +16,16 @@ import json
 
 
 class OvertureQueryEngine:
-    """Query engine for Overture Maps admin boundary data."""
+    """Query engine for Overture Maps divisions data (administrative boundaries)."""
 
     def __init__(self, parquet_path: str):
         """
         Initialize the query engine.
 
         Args:
-            parquet_path: Path or URL to Overture Maps admin boundary Parquet files
+            parquet_path: Path or URL to Overture Maps divisions Parquet files
                          (supports wildcards like 's3://bucket/path/*.parquet')
+                         Should point to theme=divisions/type=division files
         """
         self.parquet_path = parquet_path
         self.conn = None
@@ -61,70 +65,73 @@ class OvertureQueryEngine:
             return []
 
     @st.cache_data(ttl=3600)
-    def get_admin_levels(_self, country: str) -> List[int]:
+    def get_subtypes(_self, country: str) -> List[str]:
         """
-        Get distinct admin levels for a given country.
+        Get distinct subtypes (division types) for a given country.
 
         Args:
             country: Country code (e.g., 'US', 'GB')
 
         Returns:
-            Sorted list of admin levels
+            Sorted list of subtypes (e.g., 'country', 'region', 'county')
         """
         conn = _self._get_connection()
         query = f"""
-            SELECT DISTINCT admin_level
+            SELECT DISTINCT subtype
             FROM read_parquet('{_self.parquet_path}')
-            WHERE country = ? AND admin_level IS NOT NULL
-            ORDER BY admin_level
+            WHERE country = ?
+              AND subtype IS NOT NULL
+              AND class = 'land'
+            ORDER BY subtype
         """
         try:
             result = conn.execute(query, [country]).fetchall()
             return [row[0] for row in result]
         except Exception as e:
-            st.error(f"Error fetching admin levels: {e}")
+            st.error(f"Error fetching subtypes: {e}")
             return []
 
     @st.cache_data(ttl=3600)
     def get_boundaries(
         _self,
         country: str,
-        admin_level: Optional[int] = None,
-        parent_id: Optional[str] = None
+        subtype: Optional[str] = None,
+        parent_division_id: Optional[str] = None
     ) -> pd.DataFrame:
         """
         Get boundaries matching the given filters.
 
         Args:
             country: Country code
-            admin_level: Admin level filter (optional)
-            parent_id: Parent boundary ID for hierarchical filtering (optional)
+            subtype: Division subtype filter (e.g., 'country', 'region', 'county') (optional)
+            parent_division_id: Parent division ID for hierarchical filtering (optional)
 
         Returns:
-            DataFrame with columns: id, name, admin_level, country
+            DataFrame with columns: division_id, name, subtype, country, parent_division_id
         """
         conn = _self._get_connection()
 
         # Build query dynamically based on filters
-        where_clauses = ["country = ?"]
+        where_clauses = ["country = ?", "class = 'land'"]
         params = [country]
 
-        if admin_level is not None:
-            where_clauses.append("admin_level = ?")
-            params.append(admin_level)
+        if subtype is not None:
+            where_clauses.append("subtype = ?")
+            params.append(subtype)
 
-        if parent_id is not None:
-            where_clauses.append("parent_id = ?")
-            params.append(parent_id)
+        if parent_division_id is not None:
+            where_clauses.append("parent_division_id = ?")
+            params.append(parent_division_id)
 
         where_clause = " AND ".join(where_clauses)
 
         query = f"""
             SELECT
-                id as gers_id,
+                id as division_id,
                 names.primary as name,
-                admin_level,
-                country
+                subtype,
+                country,
+                parent_division_id
             FROM read_parquet('{_self.parquet_path}')
             WHERE {where_clause}
             ORDER BY name
@@ -136,7 +143,7 @@ class OvertureQueryEngine:
             return result
         except Exception as e:
             st.error(f"Error fetching boundaries: {e}")
-            return pd.DataFrame(columns=['gers_id', 'name', 'admin_level', 'country'])
+            return pd.DataFrame(columns=['division_id', 'name', 'subtype', 'country', 'parent_division_id'])
 
     @st.cache_data(ttl=3600)
     def get_geometry(_self, gers_id: str) -> Optional[Dict[str, Any]]:
@@ -186,12 +193,14 @@ class OvertureQueryEngine:
         conn = _self._get_connection()
         query = f"""
             SELECT
-                id as gers_id,
+                id as division_id,
                 names.primary as name,
-                admin_level,
-                country
+                subtype,
+                country,
+                parent_division_id
             FROM read_parquet('{_self.parquet_path}')
             WHERE country = ?
+              AND class = 'land'
               AND LOWER(names.primary) LIKE LOWER(?)
             ORDER BY name
             LIMIT 100
@@ -203,7 +212,7 @@ class OvertureQueryEngine:
             return result
         except Exception as e:
             st.error(f"Error searching boundaries: {e}")
-            return pd.DataFrame(columns=['gers_id', 'name', 'admin_level', 'country'])
+            return pd.DataFrame(columns=['division_id', 'name', 'subtype', 'country', 'parent_division_id'])
 
 
 def create_query_engine(parquet_path: str) -> OvertureQueryEngine:
