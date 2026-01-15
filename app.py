@@ -115,6 +115,7 @@ def render_boundary_selector(query_engine):
         options=[""] + countries,
         key="country_select"
     )
+    # TODO get the country division_id
 
     # Reset if country changes
     if 'previous_country' not in st.session_state:
@@ -129,11 +130,12 @@ def render_boundary_selector(query_engine):
         return None
 
     # Step 2: Cascading division dropdowns based on parent_division_id
-    current_parent_id = None
+    current_parent_id = None  # TODO that should be the country id found above
     level = 0
 
     while True:
         # Query children of current parent
+        # TODO this is now always the same function call: query_engine.get_child_divisions(current_parent_id)
         if current_parent_id is None:
             # Get top-level divisions for country
             divisions_df = query_engine.get_top_level_divisions(selected_country)
@@ -208,7 +210,6 @@ def render_boundary_selector(query_engine):
 
         if final_divisions.empty:
             st.info("No divisions at this level")
-            st.session_state.show_final_dropdown = False
         else:
             st.write("---")
             st.write(f"**Select a division to view ({len(final_divisions)} available):**")

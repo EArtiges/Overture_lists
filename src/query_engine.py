@@ -96,7 +96,7 @@ class OvertureQueryEngine:
             return []
 
     @st.cache_data(ttl=3600)
-    def get_top_level_divisions(_self, country: str) -> pd.DataFrame:
+    def get_top_level_divisions(_self, country: str) -> pd.DataFrame:  # TODO remove this. we are now onnly using get_child_divisions.
         """
         Get top-level divisions for a country (divisions with no parent).
 
