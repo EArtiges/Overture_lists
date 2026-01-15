@@ -110,37 +110,37 @@ def render_boundary_selector(query_engine):
             return None
 
     with col2:
-        # Admin level selection
-        admin_levels = query_engine.get_admin_levels(selected_country)
-        if not admin_levels:
-            st.warning(f"No admin levels found for {selected_country}")
+        # Subtype (division type) selection
+        subtypes = query_engine.get_subtypes(selected_country)
+        if not subtypes:
+            st.warning(f"No division types found for {selected_country}")
             return None
 
-        selected_level = st.selectbox(
-            "Admin Level",
-            options=[""] + admin_levels,
-            format_func=lambda x: f"Level {x}" if x != "" else "",
-            key="level_select"
+        selected_subtype = st.selectbox(
+            "Division Type",
+            options=[""] + subtypes,
+            format_func=lambda x: x.capitalize() if x != "" else "",
+            key="subtype_select"
         )
 
-        if not selected_level:
-            st.info("Select an admin level")
+        if not selected_subtype:
+            st.info("Select a division type")
             return None
 
     with col3:
         # Boundary selection
         boundaries_df = query_engine.get_boundaries(
             country=selected_country,
-            admin_level=selected_level
+            subtype=selected_subtype
         )
 
         if boundaries_df.empty:
             st.warning("No boundaries found for this selection")
             return None
 
-        # Create display options with name (admin_level)
+        # Create display options with name (subtype)
         boundary_options = [""] + [
-            f"{row['name']} (Level {row['admin_level']})"
+            f"{row['name']} ({row['subtype']})"
             for _, row in boundaries_df.iterrows()
         ]
 
@@ -170,15 +170,11 @@ def render_map_section(query_engine, selected_boundary):
         st.info("Select a boundary from the filters above to view it on the map")
         m = create_map()
     else:
-        with st.spinner(f"Loading geometry for {selected_boundary['name']}..."):
-            geometry_data = query_engine.get_geometry(selected_boundary['gers_id'])
-
-            if geometry_data is None:
-                st.error("Failed to load boundary geometry")
-                m = create_map()
-            else:
-                m = create_map(geometry_data)
-                st.session_state.selected_boundary = selected_boundary
+        # Note: Geometry display temporarily disabled - division type doesn't include geometry
+        # Would need to query division_area type separately
+        st.info(f"Selected: **{selected_boundary['name']}** ({selected_boundary['subtype']})")
+        st.session_state.selected_boundary = selected_boundary
+        m = create_map()
 
     # Render map
     st_folium(m, width=1200, height=500, key="boundary_map")
@@ -216,8 +212,8 @@ def render_list_management():
         if st.button("➕ Add to List", type="primary", use_container_width=True):
             if st.session_state.selected_boundary is not None:
                 # Check if already in list
-                gers_id = st.session_state.selected_boundary['gers_id']
-                if not any(b['gers_id'] == gers_id for b in st.session_state.current_list['boundaries']):
+                division_id = st.session_state.selected_boundary['division_id']
+                if not any(b['division_id'] == division_id for b in st.session_state.current_list['boundaries']):
                     st.session_state.current_list['boundaries'].append(
                         st.session_state.selected_boundary
                     )
