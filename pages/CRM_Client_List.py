@@ -10,6 +10,7 @@ import json
 from typing import Optional, Dict
 
 from src.crm_client_storage import CRMClientStorage
+from src.list_storage import ListStorage
 from src.components import render_crm_client_selector, create_map
 from streamlit_folium import st_folium
 
@@ -176,60 +177,16 @@ def render_client_list_management():
         st.info("No clients in list yet. Select and add clients from above.")
 
 
-def render_export_section():
-    """Render export/download functionality."""
+def render_save_section(storage: ListStorage):
+    """Render save functionality for CRM client lists."""
     st.write("---")
-    st.subheader("💾 Export Client List")
 
-    clients = st.session_state.crm_client_list['clients']
-    list_name = st.session_state.crm_client_list['list_name']
-
-    # Validation
-    if not clients:
-        st.info("Add clients to the list before exporting.")
-        return
-
-    if not list_name.strip():
-        st.warning("Please provide a list name before exporting.")
-        return
-
-    # Prepare export data (CRM data only, no geometry in export)
-    export_data = {
-        'list_name': st.session_state.crm_client_list['list_name'],
-        'description': st.session_state.crm_client_list['description'],
-        'client_count': len(clients),
-        'clients': [
-            {
-                'system_id': c['system_id'],
-                'account_name': c['account_name'],
-                'division_id': c['division_id'],
-                'division_name': c['division_name'],
-                'country': c['country'],
-                'custom_admin_level': c['custom_admin_level']
-            }
-            for c in clients
-        ]
-    }
-
-    # Export section
     col1, col2, col3 = st.columns([2, 1, 1])
 
     with col1:
-        st.write(f"**Ready to export {len(clients)} clients**")
+        st.write("### 💾 Save Client List")
 
     with col2:
-        # JSON download
-        json_str = json.dumps(export_data, indent=2)
-        st.download_button(
-            label="📥 Download JSON",
-            data=json_str,
-            file_name=f"{list_name.replace(' ', '_').lower()}_clients.json",
-            mime="application/json",
-            use_container_width=True
-        )
-
-    with col3:
-        # Clear list button
         if st.button("🗑️ Clear List", use_container_width=True):
             st.session_state.crm_client_list = {
                 'list_name': '',
@@ -240,6 +197,90 @@ def render_export_section():
             st.success("List cleared")
             st.rerun()
 
+    with col3:
+        if st.button("💾 Save List", type="primary", use_container_width=True):
+            # Validation
+            if not st.session_state.crm_client_list['list_name'].strip():
+                st.error("Please enter a list name")
+            elif not st.session_state.crm_client_list['clients']:
+                st.error("Cannot save an empty list")
+            else:
+                # Save the list using ListStorage (boundaries field for compatibility)
+                list_id = storage.save_list(
+                    list_name=st.session_state.crm_client_list['list_name'],
+                    description=st.session_state.crm_client_list['description'],
+                    boundaries=st.session_state.crm_client_list['clients']
+                )
+                st.success(f"Client list saved successfully! ID: {list_id}")
+                st.rerun()
+
+
+def render_saved_lists_sidebar(storage: ListStorage):
+    """Render saved CRM client lists in sidebar."""
+    st.sidebar.header("📚 Saved Client Lists")
+
+    saved_lists = storage.list_all_lists()
+
+    if not saved_lists:
+        st.sidebar.info("No saved client lists yet")
+        return
+
+    for list_info in saved_lists:
+        with st.sidebar.expander(f"📄 {list_info['list_name']}"):
+            st.write(f"**Clients:** {list_info['boundary_count']}")
+            st.write(f"**Created:** {list_info['created_at'][:10]}")
+            if list_info['description']:
+                st.write(f"**Description:** {list_info['description']}")
+
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("Load", key=f"load_{list_info['list_id']}", use_container_width=True):
+                    loaded_list = storage.load_list(list_info['list_id'])
+                    if loaded_list:
+                        st.session_state.crm_client_list = {
+                            'list_name': loaded_list['list_name'],
+                            'description': loaded_list['description'],
+                            'clients': loaded_list['boundaries']  # boundaries field contains clients
+                        }
+                        st.success(f"Loaded: {loaded_list['list_name']}")
+                        st.rerun()
+
+            with col2:
+                if st.button("Delete", key=f"delete_{list_info['list_id']}", use_container_width=True):
+                    if storage.delete_list(list_info['list_id']):
+                        st.success("Deleted")
+                        st.rerun()
+
+            # Download button
+            loaded_list = storage.load_list(list_info['list_id'])
+            if loaded_list:
+                # Prepare export data (CRM data only, no geometry in export)
+                export_data = {
+                    'list_name': loaded_list['list_name'],
+                    'description': loaded_list['description'],
+                    'client_count': len(loaded_list['boundaries']),
+                    'clients': [
+                        {
+                            'system_id': c['system_id'],
+                            'account_name': c['account_name'],
+                            'division_id': c['division_id'],
+                            'division_name': c['division_name'],
+                            'country': c['country'],
+                            'custom_admin_level': c['custom_admin_level']
+                        }
+                        for c in loaded_list['boundaries']
+                    ]
+                }
+                json_str = json.dumps(export_data, indent=2, ensure_ascii=False)
+                st.download_button(
+                    label="📥 Download",
+                    data=json_str,
+                    file_name=f"{list_info['list_name'].replace(' ', '_')}.json",
+                    mime="application/json",
+                    key=f"download_{list_info['list_id']}",
+                    use_container_width=True
+                )
+
 
 def main():
     """Main application entry point."""
@@ -248,16 +289,29 @@ def main():
     # Title
     st.title(page_emoji + " " + page_title)
     st.write(
-        "Create and export lists of CRM clients based on pre-mapped administrative divisions. "
+        "Create and save lists of CRM clients based on pre-mapped administrative divisions. "
         "Select clients by country, view their territories on the map, and build targeted lists "
         "for campaigns, reporting, or analysis."
     )
 
+    # Sidebar configuration and saved lists
+    with st.sidebar:
+        st.header("⚙️ Configuration")
+        st.info("CRM clients are loaded from `crm_data/clients.json`")
+
+        st.write("---")
+
+        # Initialize list storage for saved client lists
+        list_storage = ListStorage(data_dir="./crm_client_lists")
+
+        # Show saved lists
+        render_saved_lists_sidebar(list_storage)
+
     st.write("---")
 
     # Load CRM client data
-    storage = CRMClientStorage()
-    clients_data = storage.load_clients()
+    crm_storage = CRMClientStorage()
+    clients_data = crm_storage.load_clients()
 
     if not clients_data:
         st.error(
@@ -282,8 +336,8 @@ def main():
     # Client list management
     render_client_list_management()
 
-    # Export section
-    render_export_section()
+    # Save section
+    render_save_section(list_storage)
 
     # Footer
     st.write("---")
