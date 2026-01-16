@@ -123,6 +123,7 @@ def render_boundary_selector(query_engine):
         st.session_state.previous_country = selected_country
         st.session_state.division_selections = []
         st.session_state.show_final_dropdown = False
+        st.session_state.selected_boundary = None
 
     if not selected_country:
         st.info("Select a country to begin")
@@ -194,6 +195,7 @@ def render_boundary_selector(query_engine):
     st.write("---")
     if st.button("🔍 Query All at This Level", use_container_width=True, type="primary"):
         st.session_state.show_final_dropdown = True
+        st.session_state.selected_boundary = None  # Clear previous selection
         st.rerun()
 
     # Step 4: Final selection dropdown (created by button)
@@ -231,14 +233,16 @@ def render_boundary_selector(query_engine):
                 col1, col2 = st.columns(2)
                 with col1:
                     if st.button("📍 View on Map", use_container_width=True):
+                        st.session_state.selected_boundary = selected_for_map
                         st.session_state.show_final_dropdown = False
-                        return selected_for_map
+                        st.rerun()
 
                 with col2:
                     if st.button("⬇️ Drill Into This", use_container_width=True):
                         # Add to selections and hide final dropdown
                         st.session_state.division_selections.append(selected_for_map)
                         st.session_state.show_final_dropdown = False
+                        st.session_state.selected_boundary = None  # Clear map
                         st.rerun()
 
     return None
@@ -262,7 +266,6 @@ def render_map_section(query_engine, selected_boundary):
             else:
                 st.success(f"Displaying: **{selected_boundary['name']}** ({selected_boundary['subtype']})")
                 m = create_map(geometry_data)
-                st.session_state.selected_boundary = selected_boundary
 
     # Render map
     st_folium(m, width=1200, height=500, key="boundary_map")
@@ -452,12 +455,12 @@ def main():
 
     # Main content
     # Boundary selection section
-    selected_boundary = render_boundary_selector(st.session_state.query_engine)
+    render_boundary_selector(st.session_state.query_engine)
 
     st.write("---")
 
-    # Map visualization section
-    render_map_section(st.session_state.query_engine, selected_boundary)
+    # Map visualization section (uses st.session_state.selected_boundary)
+    render_map_section(st.session_state.query_engine, st.session_state.get('selected_boundary'))
 
     st.write("---")
 
