@@ -264,6 +264,7 @@ def render_map_section(query_engine, selected_boundary):
                 st.info(f"Selected: **{selected_boundary['name']}** ({selected_boundary['subtype']})")
                 m = create_map()
             else:
+                geometry_data |= {"name": selected_boundary["name"]}
                 st.success(f"Displaying: **{selected_boundary['name']}** ({selected_boundary['subtype']})")
                 m = create_map(geometry_data)
 
