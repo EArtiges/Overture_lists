@@ -7,10 +7,10 @@ boundaries from Overture Maps Foundation data.
 
 import streamlit as st
 import pandas as pd
-import folium
-from streamlit_folium import st_folium
+import plotly.graph_objects as go
 from typing import Optional, Dict
 import os
+import json
 
 from src.query_engine import create_query_engine
 from src.list_storage import ListStorage
@@ -52,19 +52,28 @@ def init_session_state():
         st.session_state.show_divisions = False
 
 
-def create_map(geometry_data: Optional[Dict] = None) -> folium.Map:
+def create_map(geometry_data: Optional[Dict] = None) -> go.Figure:
     """
-    Create a Folium map with optional boundary geometry.
+    Create a Plotly Mapbox map with optional boundary geometry.
 
     Args:
         geometry_data: Dict with 'geometry' (GeoJSON) and 'name' keys
 
     Returns:
-        Folium Map object
+        Plotly Figure object
     """
     if geometry_data is None:
         # Default world view
-        m = folium.Map(location=[20, 0], zoom_start=2)
+        fig = go.Figure(go.Scattermapbox())
+        fig.update_layout(
+            mapbox=dict(
+                style="open-street-map",
+                center=dict(lat=20, lon=0),
+                zoom=1
+            ),
+            height=500,
+            margin=dict(l=0, r=0, t=0, b=0)
+        )
     else:
         # Create GeoJSON feature
         geojson_feature = {
@@ -73,25 +82,51 @@ def create_map(geometry_data: Optional[Dict] = None) -> folium.Map:
             "properties": {"name": geometry_data['name']}
         }
 
-        # Add to map and fit bounds
-        m = folium.Map()
-        geojson_layer = folium.GeoJson(
-            geojson_feature,
-            name=geometry_data['name'],
-            style_function=lambda x: {
-                'fillColor': '#3388ff',
-                'color': '#0066cc',
-                'weight': 2,
-                'fillOpacity': 0.3
-            },
-            tooltip=folium.Tooltip(geometry_data['name'])
+        # Calculate center from geometry bounds
+        coords = []
+        if geometry_data['geometry']['type'] == 'Polygon':
+            coords = geometry_data['geometry']['coordinates'][0]
+        elif geometry_data['geometry']['type'] == 'MultiPolygon':
+            for polygon in geometry_data['geometry']['coordinates']:
+                coords.extend(polygon[0])
+
+        if coords:
+            lats = [c[1] for c in coords]
+            lons = [c[0] for c in coords]
+            center_lat = (min(lats) + max(lats)) / 2
+            center_lon = (min(lons) + max(lons)) / 2
+
+            # Calculate zoom level based on bounds
+            lat_range = max(lats) - min(lats)
+            lon_range = max(lons) - min(lons)
+            max_range = max(lat_range, lon_range)
+            zoom = 10 - (max_range * 10)  # Simple heuristic
+            zoom = max(1, min(15, zoom))  # Clamp between 1 and 15
+        else:
+            center_lat, center_lon, zoom = 20, 0, 2
+
+        # Create choropleth map
+        fig = go.Figure(go.Choroplethmapbox(
+            geojson=geojson_feature,
+            locations=[0],
+            z=[1],
+            colorscale=[[0, '#3388ff'], [1, '#3388ff']],
+            showscale=False,
+            marker=dict(opacity=0.5, line=dict(width=2, color='#0066cc')),
+            hovertemplate=f"<b>{geometry_data['name']}</b><extra></extra>"
+        ))
+
+        fig.update_layout(
+            mapbox=dict(
+                style="open-street-map",
+                center=dict(lat=center_lat, lon=center_lon),
+                zoom=zoom
+            ),
+            height=500,
+            margin=dict(l=0, r=0, t=0, b=0)
         )
-        geojson_layer.add_to(m)
 
-        # Fit map to geometry bounds
-        m.fit_bounds(geojson_layer.get_bounds())
-
-    return m
+    return fig
 
 
 def render_boundary_selector(query_engine):
@@ -204,7 +239,7 @@ def render_map_section(query_engine, selected_boundary):
 
     if selected_boundary is None:
         st.info("Select a boundary from the filters above to view it on the map")
-        m = create_map()
+        fig = create_map()
     else:
         with st.spinner(f"Loading geometry for {selected_boundary['name']}..."):
             geometry_data = query_engine.get_geometry(selected_boundary['division_id'])
@@ -213,13 +248,13 @@ def render_map_section(query_engine, selected_boundary):
             if geometry_data is None:
                 st.warning(f"Could not load geometry for {selected_boundary['name']}")
                 st.info(f"Selected: **{selected_boundary['name']}** ({selected_boundary['subtype']})")
-                m = create_map()
+                fig = create_map()
             else:
                 st.success(f"Displaying: **{selected_boundary['name']}** ({selected_boundary['subtype']})")
-                m = create_map(selected_boundary)
+                fig = create_map(selected_boundary)
 
     # Render map
-    st_folium(m, width=1200, height=500, key="boundary_map")
+    st.plotly_chart(fig, use_container_width=True)
 
 
 def render_list_management():
