@@ -174,3 +174,83 @@ def render_map_section(query_engine, selected_boundary):
     # Render map
     st_folium(m, width=1200, height=500, key="boundary_map")
 
+
+def render_crm_client_selector(clients_data: list):
+    """
+    Render simplified 2-level selector: Country → Client.
+
+    Args:
+        clients_data: List of client dictionaries loaded from CRM client storage
+    """
+    st.subheader("🏢 CRM Client Selection")
+
+    if not clients_data:
+        st.warning("No CRM clients found. Please ensure clients.json exists in crm_data/ directory.")
+        return
+
+    # Extract unique countries from client data
+    countries = sorted(list(set(c.get('country') for c in clients_data if c.get('country'))))
+
+    if not countries:
+        st.warning("No countries found in client data.")
+        return
+
+    # Step 1: Country selection
+    selected_country = st.selectbox(
+        "Select Country",
+        options=[""] + countries,
+        key="crm_country_select"
+    )
+
+    # Reset selected client if country changes
+    if 'previous_crm_country' not in st.session_state:
+        st.session_state.previous_crm_country = None
+    if selected_country != st.session_state.previous_crm_country:
+        st.session_state.previous_crm_country = selected_country
+        st.session_state.selected_client = None
+
+    if not selected_country:
+        st.info("Select a country to view CRM clients")
+        return
+
+    # Step 2: Filter clients by country
+    country_clients = [c for c in clients_data if c.get('country') == selected_country]
+
+    if not country_clients:
+        st.warning(f"No clients found for country: {selected_country}")
+        return
+
+    # Create client options (showing account name and system ID)
+    client_options = [""] + [
+        f"{client['account_name']} ({client['system_id']})"
+        for client in country_clients
+    ]
+
+    selected_idx = st.selectbox(
+        "Select Client",
+        options=range(len(client_options)),
+        format_func=lambda x: client_options[x] if client_options[x] else "Select...",
+        key="crm_client_select"
+    )
+
+    # If nothing selected, return
+    if selected_idx == 0:
+        st.session_state.selected_client = None
+        return
+
+    # Get selected client
+    selected_client = country_clients[selected_idx - 1]
+
+    # Display client details
+    st.write("---")
+    st.write(f"**Account Name:** {selected_client['account_name']}")
+    st.write(f"**System ID:** `{selected_client['system_id']}`")
+    st.write(f"**Division:** {selected_client['division_name']} ({selected_client.get('overture_subtype', 'N/A')})")
+    st.write(f"**Custom Admin Level:** {selected_client['custom_admin_level']}")
+
+    # Show on Map button
+    st.write("---")
+    if st.button(f"🗺️ Show {selected_client['account_name']} on Map", use_container_width=True, type="primary"):
+        st.session_state.selected_client = selected_client
+        st.rerun()
+

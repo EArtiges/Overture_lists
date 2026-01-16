@@ -14,7 +14,9 @@ import json
 
 from src.query_engine import create_query_engine
 from src.list_storage import ListStorage
+from src.crm_mapping_storage import CRMMappingStorage
 from src.components import render_boundary_selector, render_map_section
+import sqlite3
 
 page_title = "CRM Account Mapping"
 page_emoji = "🏢"
@@ -30,9 +32,6 @@ def init_session_state():
     if 'selected_boundary' not in st.session_state:
         st.session_state.selected_boundary = None
 
-    if 'crm_mappings' not in st.session_state:
-        st.session_state.crm_mappings = []
-
     if 'parquet_path' not in st.session_state:
         st.session_state.parquet_path = os.getenv(
             'OVERTURE_PARQUET_PATH',
@@ -46,7 +45,7 @@ def init_session_state():
         st.session_state.division_selections = []
 
 
-def render_mapping_form():
+def render_mapping_form(storage: CRMMappingStorage):
     """Render the form to add CRM account mappings."""
     st.subheader("🏢 Map to CRM Account")
 
@@ -58,6 +57,16 @@ def render_mapping_form():
 
     st.write(f"**Mapping Division:** {selected['name']} ({selected['subtype']})")
     st.write(f"**Overture Division ID:** `{selected['division_id']}`")
+
+    # Check if already mapped
+    existing_by_division = storage.get_mapping_by_division_id(selected['division_id'])
+    if existing_by_division:
+        st.warning(f"⚠️ This division is already mapped to CRM ID: **{existing_by_division['system_id']}** ({existing_by_division['account_name']})")
+        if st.button("🗑️ Remove Existing Mapping", use_container_width=True):
+            storage.delete_mapping(existing_by_division['id'])
+            st.success("Mapping removed")
+            st.rerun()
+        return
 
     col1, col2 = st.columns(2)
 
@@ -95,37 +104,48 @@ def render_mapping_form():
         elif not custom_admin_level.strip():
             st.error("Please enter a Custom Admin Level")
         else:
-            # Check if this division is already mapped
-            if any(m['division_id'] == selected['division_id'] for m in st.session_state.crm_mappings):
-                st.warning("This division is already mapped. Remove it first to remap.")
-            else:
-                # Add the mapping
-                mapping = {
-                    'division_id': selected['division_id'],
-                    'system_id': custom_id.strip(),
-                    'account_name': account_name.strip(),
-                    'custom_admin_level': custom_admin_level.strip(),
-                    'division_name': selected['name'],
-                    'overture_subtype': selected['subtype'],
-                    'country': selected['country']
-                }
-                st.session_state.crm_mappings.append(mapping)
-                st.success(f"Added mapping for {selected['name']}")
+            # Try to add the mapping (DB will enforce 1:1 constraints)
+            try:
+                storage.add_mapping(
+                    system_id=custom_id.strip(),
+                    account_name=account_name.strip(),
+                    custom_admin_level=custom_admin_level.strip(),
+                    division_id=selected['division_id'],
+                    division_name=selected['name'],
+                    overture_subtype=selected['subtype'],
+                    country=selected['country']
+                )
+                st.success(f"✅ Added mapping for {selected['name']}")
                 st.rerun()
+            except sqlite3.IntegrityError as e:
+                error_msg = str(e)
+                if 'system_id' in error_msg:
+                    # Check which division this system_id is mapped to
+                    existing = storage.get_mapping_by_system_id(custom_id.strip())
+                    if existing:
+                        st.error(f"❌ CRM ID **{custom_id.strip()}** is already mapped to division: **{existing['division_name']}** ({existing['division_id']})")
+                    else:
+                        st.error(f"❌ CRM ID **{custom_id.strip()}** already exists in database")
+                elif 'division_id' in error_msg:
+                    st.error(f"❌ Division **{selected['name']}** is already mapped to another CRM account")
+                else:
+                    st.error(f"❌ Cannot add mapping: {error_msg}")
 
 
-def render_mappings_table():
+def render_mappings_table(storage: CRMMappingStorage):
     """Render the table of current CRM mappings."""
     st.subheader("📊 Current Mappings")
 
-    if not st.session_state.crm_mappings:
+    mappings = storage.get_all_mappings()
+
+    if not mappings:
         st.info("No mappings added yet. Select a division and add mapping details above.")
         return
 
-    st.write(f"**Total Mappings:** {len(st.session_state.crm_mappings)}")
+    st.write(f"**Total Mappings:** {len(mappings)}")
 
     # Create DataFrame for display
-    df = pd.DataFrame(st.session_state.crm_mappings)
+    df = pd.DataFrame(mappings)
 
     # Reorder columns for better display
     display_columns = [
@@ -139,71 +159,98 @@ def render_mappings_table():
     ]
     df_display = df[display_columns]
 
-    # Display with option to delete rows
-    edited_df = st.data_editor(
+    # Display table
+    st.dataframe(
         df_display,
         hide_index=True,
-        use_container_width=True,
-        disabled=True,
-        num_rows="dynamic",
-        key="crm_mappings_table"
+        use_container_width=True
     )
 
-    # Detect removed rows
-    if len(edited_df) < len(df):
-        st.session_state.crm_mappings = edited_df.to_dict('records')
-        st.rerun()
+    # Delete individual mapping
+    st.write("---")
+    col1, col2 = st.columns([3, 1])
+
+    with col2:
+        if st.button("🗑️ Delete Mapping", use_container_width=True):
+            st.session_state.show_delete_dialog = True
+
+    if st.session_state.get('show_delete_dialog', False):
+        mapping_options = [f"{m['system_id']} - {m['account_name']}" for m in mappings]
+        selected_to_delete = st.selectbox(
+            "Select mapping to delete",
+            options=mapping_options,
+            key="delete_mapping_select"
+        )
+
+        col_a, col_b = st.columns(2)
+        with col_a:
+            if st.button("Confirm Delete", type="primary", use_container_width=True):
+                # Find the mapping to delete
+                idx = mapping_options.index(selected_to_delete)
+                mapping_id = mappings[idx]['id']
+                storage.delete_mapping(mapping_id)
+                st.session_state.show_delete_dialog = False
+                st.success("Mapping deleted")
+                st.rerun()
+
+        with col_b:
+            if st.button("Cancel", use_container_width=True):
+                st.session_state.show_delete_dialog = False
+                st.rerun()
 
 
-def render_download_section():
+def render_download_section(storage: CRMMappingStorage):
     """Render the download functionality."""
     st.write("---")
     st.subheader("💾 Download Mappings")
 
-    if not st.session_state.crm_mappings:
+    mappings = storage.get_all_mappings()
+
+    if not mappings:
         st.info("No mappings to download yet.")
         return
-
-    # Create the export dataframe with only the 4 required columns
-    export_df = pd.DataFrame(st.session_state.crm_mappings)
-    export_columns = ['division_id', 'system_id', 'account_name', 'custom_admin_level']
-    export_df = export_df[export_columns]
 
     col1, col2, col3 = st.columns([2, 1, 1])
 
     with col1:
-        st.write(f"**Ready to download {len(export_df)} mappings**")
+        st.write(f"**Ready to download {len(mappings)} mappings**")
 
     with col2:
-        # JSON download
-        json_str = export_df.to_json(orient='records', indent=2)
+        # JSON download (without DB metadata)
+        export_data = storage.export_to_json_format()
+        json_str = json.dumps(export_data, indent=2)
         st.download_button(
             label="📥 Download JSON",
             data=json_str,
             file_name="crm_mappings.json",
             mime="application/json",
-            use_container_width=True
+            use_container_width=True,
+            help="Export all mappings as JSON"
         )
 
     with col3:
-        # CSV download
-        csv_str = export_df.to_csv(index=False)
+        # CSV download (basic fields only)
+        export_df = pd.DataFrame(export_data)
+        csv_columns = ['division_id', 'system_id', 'account_name', 'custom_admin_level']
+        csv_df = export_df[csv_columns]
+        csv_str = csv_df.to_csv(index=False)
         st.download_button(
             label="📥 Download CSV",
             data=csv_str,
             file_name="crm_mappings.csv",
             mime="text/csv",
-            use_container_width=True
+            use_container_width=True,
+            help="Basic fields only"
         )
 
     # Clear all button
     st.write("")
     if st.button("🗑️ Clear All Mappings", use_container_width=False):
-        st.session_state.crm_mappings = []
-        st.session_state.selected_boundary = None
-        st.session_state.division_selections = []
-        st.success("All mappings cleared")
-        st.rerun()
+        if storage.clear_all_mappings():
+            st.session_state.selected_boundary = None
+            st.session_state.division_selections = []
+            st.success("All mappings cleared")
+            st.rerun()
 
 
 def main():
@@ -218,6 +265,9 @@ def main():
         "your own IDs, account names, and admin levels."
     )
 
+    # Initialize CRM Mapping Storage
+    mapping_storage = CRMMappingStorage(db_path="./data/crm_mappings.db")
+
     # Sidebar configuration
     with st.sidebar:
         st.header("⚙️ Configuration")
@@ -229,6 +279,13 @@ def main():
             help="Path or URL to Overture Maps admin boundary Parquet files"
         )
         st.session_state.parquet_path = parquet_path
+
+        st.write("---")
+
+        # Display mapping stats
+        st.subheader("📊 Mapping Statistics")
+        mapping_count = mapping_storage.get_count()
+        st.metric("Total Mappings", mapping_count)
 
     # Initialize query engine (or recreate if path changed)
     if (st.session_state.query_engine is None or
@@ -251,13 +308,13 @@ def main():
     st.write("---")
 
     # Mapping form
-    render_mapping_form()
+    render_mapping_form(mapping_storage)
 
     # Mappings table
-    render_mappings_table()
+    render_mappings_table(mapping_storage)
 
     # Download section
-    render_download_section()
+    render_download_section(mapping_storage)
 
 
 if __name__ == "__main__":
