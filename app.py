@@ -366,6 +366,20 @@ def render_saved_lists_sidebar(storage: ListStorage):
                         st.success("Deleted")
                         st.rerun()
 
+            # Download button
+            loaded_list = storage.load_list(list_info['list_id'])
+            if loaded_list:
+                import json
+                json_str = json.dumps(loaded_list, indent=2, ensure_ascii=False)
+                st.download_button(
+                    label="📥 Download",
+                    data=json_str,
+                    file_name=f"{list_info['list_name'].replace(' ', '_')}.json",
+                    mime="application/json",
+                    key=f"download_{list_info['list_id']}",
+                    use_container_width=True
+                )
+
 
 def main():
     """Main application entry point."""
