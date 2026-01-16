@@ -328,6 +328,7 @@ def render_save_section(storage: ListStorage):
                     boundaries=st.session_state.current_list['boundaries']
                 )
                 st.success(f"List saved successfully! ID: {list_id}")
+                st.rerun()
 
 
 def render_saved_lists_sidebar(storage: ListStorage):
