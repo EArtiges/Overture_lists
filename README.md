@@ -1,23 +1,35 @@
-# Overture Admin Boundary List Builder
+# Overture Admin Boundary Tools
 
-A Streamlit-based POC application for creating and managing lists of administrative boundaries from [Overture Maps Foundation](https://overturemaps.org/) data.
+A multi-page Streamlit application for working with administrative boundaries from [Overture Maps Foundation](https://overturemaps.org/) data. Create boundary lists and map divisions to CRM accounts with custom metadata.
 
 ## Overview
 
-This tool allows users to:
-- Search and filter administrative boundaries (countries, states, counties, etc.) from Overture Maps
-- Visualize boundaries on an interactive map
-- Create named lists of boundaries with descriptions
-- Save and manage multiple boundary lists
-- Export lists as JSON for future use
+This application provides two main tools:
+
+### 📋 List Builder
+Create and manage collections of administrative boundaries:
+- Browse hierarchical divisions via cascading dropdowns
+- Visualize boundaries on interactive maps
+- Build named lists with descriptions
+- Save, load, and download boundary lists
+- Persistent JSON storage
+
+### 🏢 CRM Mapping
+Map Overture divisions to your CRM accounts:
+- Select divisions using hierarchical navigation
+- Assign custom fields: System ID, Account Name, Admin Level
+- Build multiple mappings in one session
+- Export mappings as JSON or CSV
+- Link geographic territories to business data
 
 ## Architecture
 
-- **Frontend:** Streamlit
-- **Data Query:** DuckDB (queries Parquet files directly)
-- **Data Source:** Overture Maps Foundation admin boundary dataset
+- **Frontend:** Streamlit multi-page application
+- **Data Query:** DuckDB (queries Parquet files directly from S3)
+- **Data Source:** Overture Maps Foundation divisions dataset
 - **Storage:** JSON flat files with Docker volume persistence
-- **Map Rendering:** Folium
+- **Map Rendering:** Folium with geometry simplification for performance
+- **Code Structure:** Shared components for DRY architecture
 
 ## Quick Start
 
@@ -30,7 +42,7 @@ docker-compose up -d
 # Access the app at http://localhost:8501
 ```
 
-The application will mount `./list_data` as a volume for persistent storage of your lists.
+The application will mount `./list_data` and `./pages` as volumes for persistent storage.
 
 ### Option 2: Local Development
 
@@ -52,16 +64,15 @@ streamlit run app.py
 
 By default, the app connects to Overture Maps S3 data using the **divisions** theme:
 ```
-s3://overturemaps-us-west-2/release/2024-12-18.0/theme=divisions/type=division/*.parquet
+s3://overturemaps-us-west-2/release/2025-12-17.0/theme=divisions/type=division/*.parquet
 ```
 
 **Important:** The `admins` theme was deprecated in mid-2024 and replaced with `divisions`. Use the divisions theme for current releases.
 
 #### Path Structure
-- **Latest releases:** Use `theme=divisions/type=division`
-- **Legacy releases (pre-July 2024):** Use `theme=admins/type=*/`
-- **Area geometries:** Use `theme=divisions/type=division_area`
-- **All division types:** Use `theme=divisions/type=*`
+- **Division records:** `theme=divisions/type=division`
+- **Area geometries:** `theme=divisions/type=division_area` (used for map rendering)
+- **Legacy releases (pre-July 2024):** `theme=admins/type=*/`
 
 #### Release Versions
 Overture releases data monthly. Check [available releases](https://docs.overturemaps.org/release/) and update the date accordingly (format: `YYYY-MM-DD.0`).
@@ -80,47 +91,70 @@ environment:
   - OVERTURE_PARQUET_PATH=your/custom/path
 ```
 
-**Via UI:**
+**Via UI (List Builder only):**
 Use the "Parquet Data Path" input in the sidebar (changes persist during session only)
 
-## User Workflow
+## User Workflows
 
-### 1. Filter and Select Boundaries
+### List Builder Workflow
 
-Use the cascading dropdowns to filter boundaries:
-1. **Country:** Select a country code (e.g., US, GB, CA)
-2. **Admin Level:** Select administrative level (2=country, 4=state, 6=county, etc.)
-3. **Boundary:** Select the specific boundary from filtered results
+1. **Navigate:** Use cascading dropdowns to drill down through the administrative hierarchy
+   - Start with country selection
+   - Navigate through regions, provinces, districts, etc.
+   - Each level shows divisions based on parent-child relationships
 
-### 2. View on Map
+2. **Visualize:** Click "Show on Map" to display the selected boundary
+   - Optimized rendering with geometry simplification
+   - Interactive Folium map with zoom and pan
 
-Once you select a boundary, it will be displayed on the interactive map below the filters.
+3. **Build List:** Add boundaries to your working list
+   - Enter list name and description
+   - Add multiple boundaries from different hierarchies
+   - Review in editable data table
 
-### 3. Add to List
+4. **Save & Download:** Persist your work
+   - Save lists to JSON storage
+   - Download saved lists as JSON files
+   - Load previously saved lists from sidebar
 
-Click the "Add to List" button to add the selected boundary to your current working list.
+### CRM Mapping Workflow
 
-### 4. Manage Your List
+1. **Select Division:** Navigate through administrative hierarchy
+   - Same cascading dropdown interface as List Builder
+   - Visualize selected division on map
 
-- **List Name:** Give your list a descriptive name
-- **Description:** Add details about the purpose of this list
-- **Review Table:** View all boundaries in your current list
-- **Remove Items:** Delete rows from the table to remove boundaries
+2. **Add Custom Fields:** Map division to your CRM account
+   - **System ID:** Your internal CRM identifier
+   - **Account Name:** Account name from your system
+   - **Custom Admin Level:** Your own administrative nomenclature
 
-### 5. Save Your List
+3. **Build Mappings:** Create multiple mappings in one session
+   - View all mappings in data table
+   - Remove individual mappings or clear all
 
-Click "Save List" to persist your list as a JSON file. The list will appear in the sidebar for future access.
+4. **Export:** Download your mappings
+   - **JSON format:** Structured data for APIs
+   - **CSV format:** Spreadsheet-compatible
+   - Includes 4 columns: division_id, system_id, account_name, custom_admin_level
 
 ## Features
 
-### Saved Lists Management (Sidebar)
+### Hierarchical Division Selection
+- **Parent-child navigation:** Cascading dropdowns based on `parent_division_id` relationships
+- **Country-based filtering:** Always starts with country selection
+- **Dynamic levels:** Adapts to available subdivision levels per country
+- **Session persistence:** Maintains selections across page interactions
 
-- **View:** All saved lists appear in the sidebar with metadata
-- **Load:** Click "Load" to restore a saved list into your working session
-- **Delete:** Remove saved lists you no longer need
+### Map Visualization
+- **Geometry simplification:** ST_Simplify reduces polygon complexity for faster rendering
+- **Dual dataset queries:**
+  - Division metadata from `type=division`
+  - Geometries from `type=division_area`
+- **Interactive controls:** Zoom, pan, and tooltips via Folium
 
-### List File Format
+### Data Management
 
+#### List Builder
 Lists are saved as JSON in `./list_data/`:
 
 ```json
@@ -131,57 +165,108 @@ Lists are saved as JSON in `./list_data/`:
   "created_at": "2026-01-15T10:30:00Z",
   "boundaries": [
     {
-      "gers_id": "overture_gers_id_1",
+      "division_id": "08f7...",
       "name": "California",
-      "admin_level": 4,
+      "subtype": "region",
       "country": "US"
     }
   ]
 }
 ```
 
+#### CRM Mapping
+Exports include only essential columns:
+
+```json
+[
+  {
+    "division_id": "08f7...",
+    "system_id": "ACC-12345",
+    "account_name": "Acme Corp - West",
+    "custom_admin_level": "Sales Territory"
+  }
+]
+```
+
 ## Project Structure
 
 ```
 .
-├── app.py                 # Main Streamlit application
+├── app.py                       # Home page / landing page
+├── pages/
+│   ├── List_Builder.py         # List Builder page
+│   └── CRM_Mapping.py          # CRM Mapping page
 ├── src/
-│   ├── query_engine.py    # DuckDB query functions (cached)
-│   └── list_storage.py    # JSON storage management
-├── list_data/             # Persistent storage directory
-├── requirements.txt       # Python dependencies
-├── Dockerfile            # Container configuration
-├── docker-compose.yml    # Docker orchestration
-└── README.md             # This file
+│   ├── query_engine.py         # DuckDB query functions (cached)
+│   ├── list_storage.py         # JSON storage management
+│   └── shared_components.py    # Shared UI components (DRY)
+├── list_data/                   # Persistent storage directory
+├── requirements.txt             # Python dependencies
+├── Dockerfile                   # Container configuration
+├── docker-compose.yml           # Docker orchestration
+└── README.md                    # This file
 ```
 
 ## Development
 
 ### Key Design Patterns
 
+**Multi-page Architecture:** Streamlit automatically detects pages in the `pages/` directory and creates sidebar navigation.
+
+**Shared Components:** Common UI elements (map rendering, boundary selector, session state) extracted to `src/shared_components.py` to eliminate duplication and ensure consistency.
+
 **Caching:** All DuckDB queries use `@st.cache_data` to avoid re-querying Parquet files on every Streamlit rerun.
 
-**Lazy Loading:** Boundary geometries are only loaded when viewing on the map, never bulk-loaded into memory.
+**Lazy Loading:** Geometries are only loaded when viewing on the map, never bulk-loaded into memory.
 
-**Session State:** The current working list is stored in Streamlit session state and only persisted when explicitly saved.
+**Session State Management:**
+- Each page maintains its own state keys (e.g., `crm_selected_boundary` vs `selected_boundary`)
+- Common state managed via `init_common_session_state()`
+- Proper cleanup on country/selection changes
+
+**Performance Optimization:**
+- Geometry simplification: `ST_Simplify(geometry, 0.001)` reduces polygon complexity by ~100 meters tolerance
+- Separate queries for metadata vs geometries
+- Cached query results
 
 ### Data Schema
 
-The app expects Overture Maps admin boundary Parquet files with schema:
-- `id`: GERS ID (unique identifier)
+The app uses Overture Maps divisions dataset with schema:
+
+**Division records (`type=division`):**
+- `id`: Division ID (unique identifier)
 - `names.primary`: Display name
-- `admin_level`: Hierarchical level (2, 4, 6, etc.)
+- `subtype`: Division type (country, region, province, etc.)
 - `country`: ISO country code
+- `parent_division_id`: Parent division for hierarchy
+
+**Division areas (`type=division_area`):**
+- `division_id`: References division record
 - `geometry`: Polygon/MultiPolygon geometries
 
-## Limitations (POC)
+### Adding Custom Fields
+
+The page configuration pattern uses variables for titles and emojis:
+
+```python
+page_title = "Your Page Title"
+page_emoji = "🎯"
+st.set_page_config(
+    page_title=page_title,
+    page_icon=page_emoji,
+    layout="wide"
+)
+```
+
+## Limitations
 
 This is a proof-of-concept with intentional scope limitations:
 - Single-user tool (no authentication)
 - No multi-user access or list sharing
-- No bulk import/export beyond JSON
-- Map shows only one boundary at a time (no full list visualization)
-- Boundary selection via dropdowns only (no map-based selection)
+- No bulk import/export beyond JSON/CSV
+- Map shows only one boundary at a time
+- No map-based selection (dropdown-only navigation)
+- Session-based storage (no database)
 
 ## Future Enhancements
 
@@ -192,6 +277,8 @@ When migrating from POC to production:
 - Add bulk operations and advanced filtering
 - Migrate to cloud storage (Azure Blob, S3)
 - Enable full list visualization on map
+- Add spatial queries (boundaries within radius, overlaps, etc.)
+- Support batch CRM mapping uploads
 
 ## Troubleshooting
 
@@ -202,24 +289,38 @@ When migrating from POC to production:
 **Solution:**
 1. Update your path to use the `divisions` theme:
    ```
-   s3://overturemaps-us-west-2/release/2024-12-18.0/theme=divisions/type=division/*.parquet
+   s3://overturemaps-us-west-2/release/2025-12-17.0/theme=divisions/type=division/*.parquet
    ```
 
-2. If using an older release (pre-July 2024), use:
+2. Verify the release date exists on [Overture releases page](https://docs.overturemaps.org/release/)
+
+3. Check network access to S3 if using remote data
+
+### Map rendering is slow
+
+**Solution:** The app already uses geometry simplification. If still slow:
+- Adjust simplification tolerance in `src/shared_components.py` (increase from 0.001)
+- Check network bandwidth for S3 downloads
+- Consider caching geometries locally
+
+### Sidebar navigation not appearing
+
+**Common cause:** Docker volume not mounted for `pages/` directory
+
+**Solution:**
+1. Verify `docker-compose.yml` includes:
+   ```yaml
+   volumes:
+     - ./pages:/app/pages
    ```
-   s3://overturemaps-us-west-2/release/2024-06-13-beta.1/theme=admins/type=*/*.parquet
-   ```
 
-3. Check the [Overture releases page](https://docs.overturemaps.org/release/) to verify the release date exists
+2. Restart containers: `docker-compose down && docker-compose up -d`
 
-**Other checks:**
-- Verify network access to S3 if using remote data
-- Ensure DuckDB httpfs extension is installed (automatic for S3)
-- Try a different release date if the current one is unavailable
+### Pages show `st.set_page_config` error
 
-### Map not displaying
-- Check browser console for JavaScript errors
-- Verify geometry data exists for the selected boundary
+**Cause:** Only the main `app.py` should call `st.set_page_config()` in the root level. Pages can call it but must do so before any other Streamlit commands.
+
+**Solution:** Ensure page files have `st.set_page_config()` as the first Streamlit call, right after imports.
 
 ### Docker volume permissions
 ```bash
@@ -234,4 +335,4 @@ This project is provided as-is for demonstration purposes.
 ## Credits
 
 - **Data:** [Overture Maps Foundation](https://overturemaps.org/)
-- **Built with:** Streamlit, DuckDB, Folium, Python
+- **Built with:** Streamlit, DuckDB, Folium, Pandas, Python
