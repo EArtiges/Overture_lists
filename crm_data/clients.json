@@ -1,0 +1,212 @@
+[
+  {
+    "system_id": "ACC-10001",
+    "account_name": "Acme Corporation - California",
+    "division_id": "08f7b4d5c0a8ffff",
+    "division_name": "California",
+    "country": "US",
+    "overture_subtype": "region",
+    "custom_admin_level": "Sales Territory",
+    "geometry": {
+      "type": "Polygon",
+      "coordinates": [
+        [
+          [-124.4096, 42.0095],
+          [-124.4096, 32.5343],
+          [-114.1312, 32.5343],
+          [-114.1312, 42.0095],
+          [-124.4096, 42.0095]
+        ]
+      ]
+    }
+  },
+  {
+    "system_id": "ACC-10002",
+    "account_name": "TechVentures Inc - Texas",
+    "division_id": "08f7b4d5c29cffff",
+    "division_name": "Texas",
+    "country": "US",
+    "overture_subtype": "region",
+    "custom_admin_level": "Regional Account",
+    "geometry": {
+      "type": "Polygon",
+      "coordinates": [
+        [
+          [-106.6456, 36.5007],
+          [-106.6456, 25.8371],
+          [-93.5083, 25.8371],
+          [-93.5083, 36.5007],
+          [-106.6456, 36.5007]
+        ]
+      ]
+    }
+  },
+  {
+    "system_id": "ACC-10003",
+    "account_name": "Global Foods - New York",
+    "division_id": "08f7b4d5c104ffff",
+    "division_name": "New York",
+    "country": "US",
+    "overture_subtype": "region",
+    "custom_admin_level": "Enterprise Account",
+    "geometry": {
+      "type": "Polygon",
+      "coordinates": [
+        [
+          [-79.7624, 45.0153],
+          [-79.7624, 40.4961],
+          [-71.8563, 40.4961],
+          [-71.8563, 45.0153],
+          [-79.7624, 45.0153]
+        ]
+      ]
+    }
+  },
+  {
+    "system_id": "ACC-20001",
+    "account_name": "British Innovations Ltd - England",
+    "division_id": "08f7b4c285f0ffff",
+    "division_name": "England",
+    "country": "GB",
+    "overture_subtype": "country",
+    "custom_admin_level": "National Account",
+    "geometry": {
+      "type": "Polygon",
+      "coordinates": [
+        [
+          [-6.3653, 55.8110],
+          [-6.3653, 49.8820],
+          [1.7630, 49.8820],
+          [1.7630, 55.8110],
+          [-6.3653, 55.8110]
+        ]
+      ]
+    }
+  },
+  {
+    "system_id": "ACC-20002",
+    "account_name": "Highland Enterprises - Scotland",
+    "division_id": "08f7b4c284e8ffff",
+    "division_name": "Scotland",
+    "country": "GB",
+    "overture_subtype": "country",
+    "custom_admin_level": "Regional Partner",
+    "geometry": {
+      "type": "Polygon",
+      "coordinates": [
+        [
+          [-7.5720, 60.8600],
+          [-7.5720, 54.6320],
+          [-0.7280, 54.6320],
+          [-0.7280, 60.8600],
+          [-7.5720, 60.8600]
+        ]
+      ]
+    }
+  },
+  {
+    "system_id": "ACC-30001",
+    "account_name": "Paris Innovations SAS - Île-de-France",
+    "division_id": "08f7b4c2c450ffff",
+    "division_name": "Île-de-France",
+    "country": "FR",
+    "overture_subtype": "region",
+    "custom_admin_level": "Metro Account",
+    "geometry": {
+      "type": "Polygon",
+      "coordinates": [
+        [
+          [1.4462, 49.2417],
+          [1.4462, 48.1203],
+          [3.5580, 48.1203],
+          [3.5580, 49.2417],
+          [1.4462, 49.2417]
+        ]
+      ]
+    }
+  },
+  {
+    "system_id": "ACC-30002",
+    "account_name": "Provence Solutions - Provence-Alpes-Côte d'Azur",
+    "division_id": "08f7b4c2d6e4ffff",
+    "division_name": "Provence-Alpes-Côte d'Azur",
+    "country": "FR",
+    "overture_subtype": "region",
+    "custom_admin_level": "Regional Territory",
+    "geometry": {
+      "type": "Polygon",
+      "coordinates": [
+        [
+          [4.2280, 44.9330],
+          [4.2280, 42.9820],
+          [7.7200, 42.9820],
+          [7.7200, 44.9330],
+          [4.2280, 44.9330]
+        ]
+      ]
+    }
+  },
+  {
+    "system_id": "ACC-40001",
+    "account_name": "Bayern Industries GmbH - Bavaria",
+    "division_id": "08f7b4c2b584ffff",
+    "division_name": "Bavaria",
+    "country": "DE",
+    "overture_subtype": "region",
+    "custom_admin_level": "Strategic Account",
+    "geometry": {
+      "type": "Polygon",
+      "coordinates": [
+        [
+          [8.9770, 50.5645],
+          [8.9770, 47.2701],
+          [13.8396, 47.2701],
+          [13.8396, 50.5645],
+          [8.9770, 50.5645]
+        ]
+      ]
+    }
+  },
+  {
+    "system_id": "ACC-40002",
+    "account_name": "Berlin Digital Group - Berlin",
+    "division_id": "08f7b4c2a2d4ffff",
+    "division_name": "Berlin",
+    "country": "DE",
+    "overture_subtype": "region",
+    "custom_admin_level": "City Account",
+    "geometry": {
+      "type": "Polygon",
+      "coordinates": [
+        [
+          [13.0883, 52.6755],
+          [13.0883, 52.3382],
+          [13.7611, 52.3382],
+          [13.7611, 52.6755],
+          [13.0883, 52.6755]
+        ]
+      ]
+    }
+  },
+  {
+    "system_id": "ACC-10004",
+    "account_name": "Sunshine Retail - Florida",
+    "division_id": "08f7b4d5c338ffff",
+    "division_name": "Florida",
+    "country": "US",
+    "overture_subtype": "region",
+    "custom_admin_level": "Sales Territory",
+    "geometry": {
+      "type": "Polygon",
+      "coordinates": [
+        [
+          [-87.6349, 31.0009],
+          [-87.6349, 24.5210],
+          [-80.0310, 24.5210],
+          [-80.0310, 31.0009],
+          [-87.6349, 31.0009]
+        ]
+      ]
+    }
+  }
+]

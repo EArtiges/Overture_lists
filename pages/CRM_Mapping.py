@@ -107,7 +107,8 @@ def render_mapping_form():
                     'custom_admin_level': custom_admin_level.strip(),
                     'division_name': selected['name'],
                     'overture_subtype': selected['subtype'],
-                    'country': selected['country']
+                    'country': selected['country'],
+                    'geometry': selected.get('geometry')
                 }
                 st.session_state.crm_mappings.append(mapping)
                 st.success(f"Added mapping for {selected['name']}")
@@ -164,36 +165,36 @@ def render_download_section():
         st.info("No mappings to download yet.")
         return
 
-    # Create the export dataframe with only the 4 required columns
-    export_df = pd.DataFrame(st.session_state.crm_mappings)
-    export_columns = ['division_id', 'system_id', 'account_name', 'custom_admin_level']
-    export_df = export_df[export_columns]
-
     col1, col2, col3 = st.columns([2, 1, 1])
 
     with col1:
-        st.write(f"**Ready to download {len(export_df)} mappings**")
+        st.write(f"**Ready to download {len(st.session_state.crm_mappings)} mappings**")
 
     with col2:
-        # JSON download
-        json_str = export_df.to_json(orient='records', indent=2)
+        # JSON download with all fields including geometry
+        json_str = json.dumps(st.session_state.crm_mappings, indent=2)
         st.download_button(
             label="📥 Download JSON",
             data=json_str,
             file_name="crm_mappings.json",
             mime="application/json",
-            use_container_width=True
+            use_container_width=True,
+            help="Includes all fields with geometry"
         )
 
     with col3:
-        # CSV download
-        csv_str = export_df.to_csv(index=False)
+        # CSV download (without geometry for simplicity)
+        export_df = pd.DataFrame(st.session_state.crm_mappings)
+        csv_columns = ['division_id', 'system_id', 'account_name', 'custom_admin_level']
+        csv_df = export_df[csv_columns]
+        csv_str = csv_df.to_csv(index=False)
         st.download_button(
             label="📥 Download CSV",
             data=csv_str,
             file_name="crm_mappings.csv",
             mime="text/csv",
-            use_container_width=True
+            use_container_width=True,
+            help="Basic fields only (no geometry)"
         )
 
     # Clear all button
