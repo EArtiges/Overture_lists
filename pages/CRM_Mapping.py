@@ -208,6 +208,9 @@ def render_download_section():
 
 def main():
     """Main application entry point."""
+    init_session_state()
+
+    # Title
     st.title(page_emoji + " " + page_title)
     st.write(
         "Map Overture administrative divisions to your CRM accounts with custom metadata. "
@@ -215,15 +218,26 @@ def main():
         "your own IDs, account names, and admin levels."
     )
 
-    # Initialize session state
-    init_session_state()
+    # Sidebar configuration
+    with st.sidebar:
+        st.header("⚙️ Configuration")
 
-    # Initialize query engine
-    if st.session_state.query_engine is None:
-        with st.spinner("Initializing query engine..."):
-            st.session_state.query_engine = create_query_engine(
-                st.session_state.parquet_path
-            )
+        # Parquet path configuration
+        parquet_path = st.text_input(
+            "Parquet Data Path",
+            value=st.session_state.parquet_path,
+            help="Path or URL to Overture Maps admin boundary Parquet files"
+        )
+        st.session_state.parquet_path = parquet_path
+
+    # Initialize query engine (or recreate if path changed)
+    if (st.session_state.query_engine is None or
+        st.session_state.query_engine.parquet_path != st.session_state.parquet_path):
+        try:
+            st.session_state.query_engine = create_query_engine(st.session_state.parquet_path)
+        except Exception as e:
+            st.error(f"Error initializing query engine: {e}")
+            st.stop()
 
     # Main layout
     col1, col2 = st.columns([1, 2])
