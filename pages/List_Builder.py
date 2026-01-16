@@ -15,6 +15,13 @@ import os
 from src.query_engine import create_query_engine
 from src.list_storage import ListStorage
 
+page_title = "Overture Admin Boundary List Builder"
+page_emoji = "🗺️"
+st.set_page_config(
+    page_title=page_title,
+    page_icon=page_emoji,
+    layout="wide"
+)
 
 def init_session_state():
     """Initialize session state variables."""
@@ -379,7 +386,7 @@ def main():
     init_session_state()
 
     # Title
-    st.title("🗺️ Overture Admin Boundary List Builder")
+    st.title(page_emoji + " " + page_title)
     st.write("Create and manage lists of administrative boundaries from Overture Maps data")
 
     # Sidebar configuration

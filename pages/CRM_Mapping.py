@@ -15,6 +15,14 @@ import json
 from src.query_engine import create_query_engine
 from src.list_storage import ListStorage
 
+page_title = "CRM Account Mapping"
+page_emoji = "🏢"
+st.set_page_config(
+    page_title=page_title,
+    page_icon=page_emoji,
+    layout="wide"
+)
+
 
 def init_session_state():
     """Initialize session state variables for CRM mapping."""
@@ -362,7 +370,7 @@ def render_download_section():
 
 def main():
     """Main application entry point."""
-    st.title("🏢 CRM Account Mapping")
+    st.title(page_emoji + " " + page_title)
     st.write(
         "Map Overture administrative divisions to your CRM accounts with custom metadata. "
         "Select divisions using the hierarchical navigator, view them on the map, and assign "

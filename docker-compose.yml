@@ -9,6 +9,8 @@ services:
     volumes:
       # Mount local list_data directory for persistence
       - ./list_data:/app/data
+      - ./pages:/app/pages
+      - ./.streamlit:/app/.streamlit
     environment:
       # Set Overture Parquet path (can be S3, HTTP, or local path)
       # Note: Use theme=divisions (admins theme was deprecated in 2024)
