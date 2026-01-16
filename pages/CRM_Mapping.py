@@ -14,6 +14,7 @@ import json
 
 from src.query_engine import create_query_engine
 from src.list_storage import ListStorage
+from src.components import render_boundary_selector, render_map_section
 
 page_title = "CRM Account Mapping"
 page_emoji = "🏢"
@@ -26,8 +27,8 @@ st.set_page_config(
 
 def init_session_state():
     """Initialize session state variables for CRM mapping."""
-    if 'crm_selected_boundary' not in st.session_state:
-        st.session_state.crm_selected_boundary = None
+    if 'selected_boundary' not in st.session_state:
+        st.session_state.selected_boundary = None
 
     if 'crm_mappings' not in st.session_state:
         st.session_state.crm_mappings = []
@@ -45,178 +46,15 @@ def init_session_state():
         st.session_state.division_selections = []
 
 
-def create_map(geometry_data: Optional[Dict] = None) -> folium.Map:
-    """
-    Create a Folium map with optional boundary geometry.
-
-    Args:
-        geometry_data: Dict with 'geometry' (GeoJSON) and 'name' keys
-
-    Returns:
-        Folium Map object
-    """
-    if geometry_data is None:
-        # Default world view
-        m = folium.Map(location=[20, 0], zoom_start=2)
-    else:
-        # Create GeoJSON feature
-        geojson_feature = {
-            "type": "Feature",
-            "geometry": geometry_data['geometry'],
-            "properties": {"name": geometry_data['name']}
-        }
-
-        # Add to map and fit bounds
-        m = folium.Map()
-        geojson_layer = folium.GeoJson(
-            geojson_feature,
-            name=geometry_data['name'],
-            style_function=lambda x: {
-                'fillColor': '#3388ff',
-                'color': '#0066cc',
-                'weight': 2,
-                'fillOpacity': 0.3
-            },
-            tooltip=folium.Tooltip(geometry_data['name'])
-        )
-        geojson_layer.add_to(m)
-
-        # Fit map to geometry bounds
-        m.fit_bounds(geojson_layer.get_bounds())
-
-    return m
-
-
-def render_boundary_selector(query_engine):
-    """Render hierarchical drill-down boundary selection UI."""
-    st.subheader("🔍 Select Division")
-
-    # Country selection
-    with st.spinner("Loading countries..."):
-        countries = query_engine.get_countries()
-
-    if countries.empty:
-        st.error("No countries found in dataset")
-        return None
-
-    selected_country = st.selectbox(
-        "Select Country",
-        options=countries['country_code'].tolist(),
-        format_func=lambda x: countries[countries['country_code'] == x]['country_name'].iloc[0],
-        key="crm_country_select"
-    )
-
-    if not selected_country:
-        return None
-
-    # Clear division selections if country changed
-    if 'crm_last_country' not in st.session_state or st.session_state.crm_last_country != selected_country:
-        st.session_state.division_selections = []
-        st.session_state.crm_selected_boundary = None
-        st.session_state.crm_last_country = selected_country
-
-    # Get the country division_id to start hierarchy
-    country_division = query_engine.get_country_division(selected_country)
-    if country_division is None:
-        st.error(f"Could not find division record for country: {selected_country}")
-        return None
-
-    current_parent_id = country_division['division_id']
-    level = 0
-
-    # Build cascading dropdowns
-    while True:
-        divisions_df = query_engine.get_child_divisions(current_parent_id)
-
-        if divisions_df.empty:
-            break
-
-        # Create a unique key for this level
-        level_key = f"crm_level_{level}"
-
-        # Check if we already have a selection at this level
-        if level < len(st.session_state.division_selections):
-            default_index = divisions_df[
-                divisions_df['division_id'] == st.session_state.division_selections[level]['division_id']
-            ].index
-            default_index = default_index[0] if len(default_index) > 0 else 0
-        else:
-            default_index = 0
-
-        selected_division_id = st.selectbox(
-            f"Select {divisions_df['subtype'].iloc[0] if not divisions_df.empty else 'Division'}",
-            options=divisions_df['division_id'].tolist(),
-            format_func=lambda x: divisions_df[divisions_df['division_id'] == x]['name'].iloc[0],
-            key=level_key,
-            index=default_index
-        )
-
-        # Get the selected division details
-        selected_row = divisions_df[divisions_df['division_id'] == selected_division_id].iloc[0]
-        selected_division = {
-            'division_id': selected_row['division_id'],
-            'name': selected_row['name'],
-            'subtype': selected_row['subtype'],
-            'country': selected_row['country']
-        }
-
-        # Update session state
-        if level < len(st.session_state.division_selections):
-            if st.session_state.division_selections[level]['division_id'] != selected_division_id:
-                st.session_state.division_selections = st.session_state.division_selections[:level]
-                st.session_state.division_selections.append(selected_division)
-                st.rerun()
-        else:
-            st.session_state.division_selections.append(selected_division)
-
-        # Move to next level
-        current_parent_id = selected_division_id
-        level += 1
-
-    # Show on Map button
-    if st.session_state.division_selections:
-        st.write("---")
-        last_selected = st.session_state.division_selections[-1]
-        if st.button(f"🗺️ Show {last_selected['name']} on Map", use_container_width=True, type="primary", key="crm_show_map"):
-            st.session_state.crm_selected_boundary = last_selected
-            st.rerun()
-
-    return None
-
-
-def render_map_section(query_engine, selected_boundary):
-    """Render the map visualization section."""
-    st.subheader("🗺️ Map View")
-
-    if selected_boundary is None:
-        st.info("Select a boundary from the filters above to view it on the map")
-        m = create_map()
-    else:
-        with st.spinner(f"Loading geometry for {selected_boundary['name']}..."):
-            geometry_data = query_engine.get_geometry(selected_boundary['division_id'])
-
-            if geometry_data is None:
-                st.warning(f"Could not load geometry for {selected_boundary['name']}")
-                st.info(f"Selected: **{selected_boundary['name']}** ({selected_boundary['subtype']})")
-                m = create_map()
-            else:
-                geometry_data |= {"name": selected_boundary["name"]}
-                st.success(f"Displaying: **{selected_boundary['name']}** ({selected_boundary['subtype']})")
-                m = create_map(geometry_data)
-
-    # Render map
-    st_folium(m, width=1200, height=500, key="crm_boundary_map")
-
-
 def render_mapping_form():
     """Render the form to add CRM account mappings."""
     st.subheader("🏢 Map to CRM Account")
 
-    if st.session_state.crm_selected_boundary is None:
+    if st.session_state.selected_boundary is None:
         st.info("Select and display a boundary on the map first")
         return
 
-    selected = st.session_state.crm_selected_boundary
+    selected = st.session_state.selected_boundary
 
     st.write(f"**Mapping Division:** {selected['name']} ({selected['subtype']})")
     st.write(f"**Overture Division ID:** `{selected['division_id']}`")
@@ -362,7 +200,7 @@ def render_download_section():
     st.write("")
     if st.button("🗑️ Clear All Mappings", use_container_width=False):
         st.session_state.crm_mappings = []
-        st.session_state.crm_selected_boundary = None
+        st.session_state.selected_boundary = None
         st.session_state.division_selections = []
         st.success("All mappings cleared")
         st.rerun()
@@ -394,7 +232,7 @@ def main():
         render_boundary_selector(st.session_state.query_engine)
 
     with col2:
-        render_map_section(st.session_state.query_engine, st.session_state.get('crm_selected_boundary'))
+        render_map_section(st.session_state.query_engine, st.session_state.get('selected_boundary'))
 
     st.write("---")
 
