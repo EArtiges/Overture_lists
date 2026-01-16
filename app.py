@@ -208,15 +208,15 @@ def render_map_section(query_engine, selected_boundary):
     else:
         with st.spinner(f"Loading geometry for {selected_boundary['name']}..."):
             geometry_data = query_engine.get_geometry(selected_boundary['division_id'])
+            selected_boundary["geometry"] = geometry_data
 
             if geometry_data is None:
                 st.warning(f"Could not load geometry for {selected_boundary['name']}")
                 st.info(f"Selected: **{selected_boundary['name']}** ({selected_boundary['subtype']})")
                 m = create_map()
             else:
-                geometry_data |= {"name": selected_boundary["name"]}
                 st.success(f"Displaying: **{selected_boundary['name']}** ({selected_boundary['subtype']})")
-                m = create_map(geometry_data)
+                m = create_map(selected_boundary)
 
     # Render map
     st_folium(m, width=1200, height=500, key="boundary_map")

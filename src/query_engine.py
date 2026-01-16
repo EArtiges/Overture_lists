@@ -157,9 +157,7 @@ class OvertureQueryEngine:
         try:
             result = conn.execute(query, [division_id]).fetchone()
             if result and result[0]:
-                return {
-                    'geometry': json.loads(result[0]),
-                }
+                return json.loads(result[0])
             return None
         except Exception as e:
             st.error(f"Error fetching geometry: {e}")
