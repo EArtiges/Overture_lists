@@ -38,6 +38,8 @@ class OvertureQueryEngine:
             try:
                 self.conn.execute("INSTALL httpfs;")
                 self.conn.execute("LOAD httpfs;")
+                self.conn.execute("INSTALL spatial;")
+                self.conn.execute("LOAD spatial;")
             except Exception:
                 pass  # Extensions may not be needed for local files
         return self.conn
@@ -155,19 +157,8 @@ class OvertureQueryEngine:
         try:
             result = conn.execute(query, [division_id]).fetchone()
             if result and result[0]:
-                # Get the name from the division dataset
-                division_query = f"""
-                    SELECT names.primary as name
-                    FROM read_parquet('{_self.parquet_path}')
-                    WHERE id = ?
-                    LIMIT 1
-                """
-                name_result = conn.execute(division_query, [division_id]).fetchone()
-                name = name_result[0] if name_result else "Unknown"
-
                 return {
                     'geometry': json.loads(result[0]),
-                    'name': name
                 }
             return None
         except Exception as e:
