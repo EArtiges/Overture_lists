@@ -16,14 +16,6 @@ from src.query_engine import create_query_engine
 from src.list_storage import ListStorage
 
 
-# Page configuration
-st.set_page_config(
-    page_title="CRM Account Mapping",
-    page_icon="🏢",
-    layout="wide"
-)
-
-
 def init_session_state():
     """Initialize session state variables for CRM mapping."""
     if 'crm_selected_boundary' not in st.session_state:
