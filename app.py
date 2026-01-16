@@ -101,8 +101,6 @@ def render_boundary_selector(query_engine):
     # Initialize selection state
     if 'division_selections' not in st.session_state:
         st.session_state.division_selections = []
-    if 'show_final_dropdown' not in st.session_state:
-        st.session_state.show_final_dropdown = False
 
     # Step 1: Country selection
     countries = query_engine.get_countries()
@@ -122,7 +120,6 @@ def render_boundary_selector(query_engine):
     if selected_country != st.session_state.previous_country:
         st.session_state.previous_country = selected_country
         st.session_state.division_selections = []
-        st.session_state.show_final_dropdown = False
         st.session_state.selected_boundary = None
 
     if not selected_country:
@@ -191,59 +188,12 @@ def render_boundary_selector(query_engine):
         ])
         st.write(f"**Path:** {breadcrumb}")
 
-    # Step 3: "Query all at this level" button
-    st.write("---")
-    if st.button("🔍 Query All at This Level", use_container_width=True, type="primary"):
-        st.session_state.show_final_dropdown = True
-        st.session_state.selected_boundary = None  # Clear previous selection
-        st.rerun()
-
-    # Step 4: Final selection dropdown (created by button)
-    if st.session_state.show_final_dropdown:
-        # Query divisions at current level
-        if not st.session_state.division_selections:
-            # At country level - show children of country
-            final_divisions = query_engine.get_child_divisions(country_division['division_id'])
-        else:
-            # Show children of last selected division
-            last_division = st.session_state.division_selections[-1]
-            final_divisions = query_engine.get_child_divisions(last_division['division_id'])
-
-        if final_divisions.empty:
-            st.info("No divisions at this level")
-        else:
-            st.write("---")
-            st.write(f"**Select a division to view ({len(final_divisions)} available):**")
-
-            final_options = [""] + [
-                f"{row['name']} ({row['subtype']})"
-                for _, row in final_divisions.iterrows()
-            ]
-
-            final_idx = st.selectbox(
-                "Pick a division",
-                options=range(len(final_options)),
-                format_func=lambda x: final_options[x] if final_options[x] else "Select...",
-                key="final_division_select"
-            )
-
-            if final_idx > 0:
-                selected_for_map = final_divisions.iloc[final_idx - 1].to_dict()
-
-                col1, col2 = st.columns(2)
-                with col1:
-                    if st.button("📍 View on Map", use_container_width=True):
-                        st.session_state.selected_boundary = selected_for_map
-                        st.session_state.show_final_dropdown = False
-                        st.rerun()
-
-                with col2:
-                    if st.button("⬇️ Drill Into This", use_container_width=True):
-                        # Add to selections and hide final dropdown
-                        st.session_state.division_selections.append(selected_for_map)
-                        st.session_state.show_final_dropdown = False
-                        st.session_state.selected_boundary = None  # Clear map
-                        st.rerun()
+        # Show on Map button for currently selected division
+        st.write("---")
+        last_selected = st.session_state.division_selections[-1]
+        if st.button(f"🗺️ Show {last_selected['name']} on Map", use_container_width=True, type="primary"):
+            st.session_state.selected_boundary = last_selected
+            st.rerun()
 
     return None
 
