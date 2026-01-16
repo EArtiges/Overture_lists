@@ -91,7 +91,7 @@ environment:
   - OVERTURE_PARQUET_PATH=your/custom/path
 ```
 
-**Via UI (List Builder only):**
+**Via UI:**
 Use the "Parquet Data Path" input in the sidebar (changes persist during session only)
 
 ## User Workflows
