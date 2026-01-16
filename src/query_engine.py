@@ -16,7 +16,7 @@ import json
 
 
 class OvertureQueryEngine:
-    """Query engine for Overture Maps divisions data (administrative boundaries)."""
+    """Stateful query engine for Overture Maps divisions data (administrative boundaries)."""
 
     def __init__(self, parquet_path: str):
         """
@@ -38,6 +38,8 @@ class OvertureQueryEngine:
             try:
                 self.conn.execute("INSTALL httpfs;")
                 self.conn.execute("LOAD httpfs;")
+                self.conn.execute("INSTALL spatial;")
+                self.conn.execute("LOAD spatial;")
             except Exception:
                 pass  # Extensions may not be needed for local files
         return self.conn
@@ -65,66 +67,48 @@ class OvertureQueryEngine:
             return []
 
     @st.cache_data(ttl=3600)
-    def get_subtypes(_self, country: str) -> List[str]:
+    def get_country_division(_self, country: str) -> Optional[Dict]:
         """
-        Get distinct subtypes (division types) for a given country.
+        Get the country division record for a given country code.
 
         Args:
-            country: Country code (e.g., 'US', 'GB')
+            country: Country code (e.g., 'BE', 'US')
 
         Returns:
-            Sorted list of subtypes (e.g., 'country', 'region', 'county')
+            Dict with country division info or None if not found
         """
         conn = _self._get_connection()
         query = f"""
-            SELECT DISTINCT subtype
+            SELECT
+                id as division_id,
+                names.primary as name
             FROM read_parquet('{_self.parquet_path}')
             WHERE country = ?
-              AND subtype IS NOT NULL
-              AND class = 'land'
-            ORDER BY subtype
+              AND subtype = 'country'
+            LIMIT 1
         """
+
         try:
-            result = conn.execute(query, [country]).fetchall()
-            return [row[0] for row in result]
+            result = conn.execute(query, [country]).fetchdf()
+            if not result.empty:
+                return result.iloc[0].to_dict()
+            return None
         except Exception as e:
-            st.error(f"Error fetching subtypes: {e}")
-            return []
+            st.error(f"Error fetching country division: {e}")
+            return None
 
     @st.cache_data(ttl=3600)
-    def get_boundaries(
-        _self,
-        country: str,
-        subtype: Optional[str] = None,
-        parent_division_id: Optional[str] = None
-    ) -> pd.DataFrame:
+    def get_child_divisions(_self, parent_division_id: str) -> pd.DataFrame:
         """
-        Get boundaries matching the given filters.
+        Get child divisions of a specific parent division.
 
         Args:
-            country: Country code
-            subtype: Division subtype filter (e.g., 'country', 'region', 'county') (optional)
-            parent_division_id: Parent division ID for hierarchical filtering (optional)
+            parent_division_id: Parent division ID
 
         Returns:
             DataFrame with columns: division_id, name, subtype, country, parent_division_id
         """
         conn = _self._get_connection()
-
-        # Build query dynamically based on filters
-        where_clauses = ["country = ?", "class = 'land'"]
-        params = [country]
-
-        if subtype is not None:
-            where_clauses.append("subtype = ?")
-            params.append(subtype)
-
-        if parent_division_id is not None:
-            where_clauses.append("parent_division_id = ?")
-            params.append(parent_division_id)
-
-        where_clause = " AND ".join(where_clauses)
-
         query = f"""
             SELECT
                 id as division_id,
@@ -133,46 +117,47 @@ class OvertureQueryEngine:
                 country,
                 parent_division_id
             FROM read_parquet('{_self.parquet_path}')
-            WHERE {where_clause}
+            WHERE parent_division_id = ?
             ORDER BY name
             LIMIT 1000
         """
 
         try:
-            result = conn.execute(query, params).fetchdf()
+            result = conn.execute(query, [parent_division_id]).fetchdf()
             return result
         except Exception as e:
-            st.error(f"Error fetching boundaries: {e}")
+            st.error(f"Error fetching child divisions: {e}")
             return pd.DataFrame(columns=['division_id', 'name', 'subtype', 'country', 'parent_division_id'])
 
     @st.cache_data(ttl=3600)
-    def get_geometry(_self, gers_id: str) -> Optional[Dict[str, Any]]:
+    def get_geometry(_self, division_id: str) -> Optional[Dict[str, Any]]:
         """
-        Get geometry for a specific boundary as GeoJSON.
+        Get geometry for a specific division from division_area dataset.
 
         Args:
-            gers_id: GERS ID of the boundary
+            division_id: Division ID
 
         Returns:
-            GeoJSON geometry dict or None if not found
+            GeoJSON geometry dict with geometry and name, or None if not found
         """
         conn = _self._get_connection()
+
+        # Convert path from type=division to type=division_area
+        area_path = _self.parquet_path.replace('type=division', 'type=division_area')
+
         query = f"""
             SELECT
-                ST_AsGeoJSON(geometry) as geojson,
-                names.primary as name
-            FROM read_parquet('{_self.parquet_path}')
-            WHERE id = ?
+                ST_AsGeoJSON(ST_Simplify(geometry, 0.001)) as geojson,
+                division_id
+            FROM read_parquet('{area_path}')
+            WHERE division_id = ?
             LIMIT 1
         """
 
         try:
-            result = conn.execute(query, [gers_id]).fetchone()
+            result = conn.execute(query, [division_id]).fetchone()
             if result and result[0]:
-                return {
-                    'geometry': json.loads(result[0]),
-                    'name': result[1]
-                }
+                return json.loads(result[0])
             return None
         except Exception as e:
             st.error(f"Error fetching geometry: {e}")

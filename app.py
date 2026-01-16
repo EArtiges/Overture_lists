@@ -40,8 +40,16 @@ def init_session_state():
         # Default path - can be overridden via environment variable
         st.session_state.parquet_path = os.getenv(
             'OVERTURE_PARQUET_PATH',
-            's3://overturemaps-us-west-2/release/2025-12-17.0/theme=divisions/type=division_area/*.parquet'
+            's3://overturemaps-us-west-2/release/2025-12-17.0/theme=divisions/type=division/*.parquet'
         )
+
+    # Query engine instance (stateful)
+    if 'query_engine' not in st.session_state:
+        st.session_state.query_engine = None
+
+    # UI state
+    if 'show_divisions' not in st.session_state:
+        st.session_state.show_divisions = False
 
 
 def create_map(geometry_data: Optional[Dict] = None) -> folium.Map:
@@ -87,77 +95,105 @@ def create_map(geometry_data: Optional[Dict] = None) -> folium.Map:
 
 
 def render_boundary_selector(query_engine):
-    """Render the cascading boundary selection UI."""
-    st.subheader("🔍 Select Boundary")
+    """Render hierarchical drill-down boundary selection UI."""
+    st.subheader("🔍 Hierarchical Division Selection")
 
-    col1, col2, col3 = st.columns(3)
+    # Initialize selection state
+    if 'division_selections' not in st.session_state:
+        st.session_state.division_selections = []
 
-    with col1:
-        # Country selection
-        countries = query_engine.get_countries()
-        if not countries:
-            st.warning("No countries found. Please check your Parquet data path.")
-            return None
+    # Step 1: Country selection
+    countries = query_engine.get_countries()
+    if not countries:
+        st.warning("No countries found. Please check your Parquet data path.")
+        return None
 
-        selected_country = st.selectbox(
-            "Country",
-            options=[""] + countries,
-            key="country_select"
-        )
+    selected_country = st.selectbox(
+        "Select Country",
+        options=[""] + countries,
+        key="country_select"
+    )
 
-        if not selected_country:
-            st.info("Select a country to continue")
-            return None
+    # Reset if country changes
+    if 'previous_country' not in st.session_state:
+        st.session_state.previous_country = None
+    if selected_country != st.session_state.previous_country:
+        st.session_state.previous_country = selected_country
+        st.session_state.division_selections = []
+        st.session_state.selected_boundary = None
 
-    with col2:
-        # Subtype (division type) selection
-        subtypes = query_engine.get_subtypes(selected_country)
-        if not subtypes:
-            st.warning(f"No division types found for {selected_country}")
-            return None
+    if not selected_country:
+        st.info("Select a country to begin")
+        return None
 
-        selected_subtype = st.selectbox(
-            "Division Type",
-            options=[""] + subtypes,
-            format_func=lambda x: x.capitalize() if x != "" else "",
-            key="subtype_select"
-        )
+    # Get the country division_id
+    country_division = query_engine.get_country_division(selected_country)
+    if not country_division:
+        st.error(f"Could not find country division for {selected_country}")
+        return None
 
-        if not selected_subtype:
-            st.info("Select a division type")
-            return None
+    # Step 2: Cascading division dropdowns based on parent_division_id
+    current_parent_id = country_division['division_id']
+    level = 0
 
-    with col3:
-        # Boundary selection
-        boundaries_df = query_engine.get_boundaries(
-            country=selected_country,
-            subtype=selected_subtype
-        )
+    while True:
+        # Query children of current parent (always using get_child_divisions)
+        divisions_df = query_engine.get_child_divisions(current_parent_id)
 
-        if boundaries_df.empty:
-            st.warning("No boundaries found for this selection")
-            return None
+        # If no divisions at this level, stop creating dropdowns
+        if divisions_df.empty:
+            break
 
-        # Create display options with name (subtype)
-        boundary_options = [""] + [
+        # Create dropdown for this level
+        division_options = [""] + [
             f"{row['name']} ({row['subtype']})"
-            for _, row in boundaries_df.iterrows()
+            for _, row in divisions_df.iterrows()
         ]
 
         selected_idx = st.selectbox(
-            "Boundary",
-            options=range(len(boundary_options)),
-            format_func=lambda x: boundary_options[x] if boundary_options[x] else "Select...",
-            key="boundary_select"
+            f"Level {level + 2}: Select Division",
+            options=range(len(division_options)),
+            format_func=lambda x: division_options[x] if division_options[x] else "Select...",
+            key=f"level_{level}_dropdown"
         )
 
+        # If nothing selected at this level, stop
         if selected_idx == 0:
-            st.info("Select a boundary to view on map")
-            return None
+            # Truncate selections beyond this level
+            st.session_state.division_selections = st.session_state.division_selections[:level]
+            break
 
-        # Get the selected boundary data
-        selected_boundary = boundaries_df.iloc[selected_idx - 1].to_dict()
-        return selected_boundary
+        # Get selected division
+        selected_division = divisions_df.iloc[selected_idx - 1].to_dict()
+
+        # Update selections list
+        if level < len(st.session_state.division_selections):
+            # User changed selection at this level - truncate
+            st.session_state.division_selections = st.session_state.division_selections[:level]
+
+        if level == len(st.session_state.division_selections):
+            # New selection at this level
+            st.session_state.division_selections.append(selected_division)
+
+        # Move to next level
+        current_parent_id = selected_division['division_id']
+        level += 1
+
+    # Show breadcrumb
+    if st.session_state.division_selections:
+        st.write("---")
+        breadcrumb = selected_country + " → " + " → ".join([
+            f"{div['name']} ({div['subtype']})"
+            for div in st.session_state.division_selections
+        ])
+        st.write(f"**Path:** {breadcrumb}")
+
+        # Show on Map button for currently selected division
+        st.write("---")
+        last_selected = st.session_state.division_selections[-1]
+        if st.button(f"🗺️ Show {last_selected['name']} on Map", use_container_width=True, type="primary"):
+            st.session_state.selected_boundary = last_selected
+            st.rerun()
 
     return None
 
@@ -170,11 +206,17 @@ def render_map_section(query_engine, selected_boundary):
         st.info("Select a boundary from the filters above to view it on the map")
         m = create_map()
     else:
-        # Note: Geometry display temporarily disabled - division type doesn't include geometry
-        # Would need to query division_area type separately
-        st.info(f"Selected: **{selected_boundary['name']}** ({selected_boundary['subtype']})")
-        st.session_state.selected_boundary = selected_boundary
-        m = create_map()
+        with st.spinner(f"Loading geometry for {selected_boundary['name']}..."):
+            geometry_data = query_engine.get_geometry(selected_boundary['division_id'])
+            selected_boundary["geometry"] = geometry_data
+
+            if geometry_data is None:
+                st.warning(f"Could not load geometry for {selected_boundary['name']}")
+                st.info(f"Selected: **{selected_boundary['name']}** ({selected_boundary['subtype']})")
+                m = create_map()
+            else:
+                st.success(f"Displaying: **{selected_boundary['name']}** ({selected_boundary['subtype']})")
+                m = create_map(selected_boundary)
 
     # Render map
     st_folium(m, width=1200, height=500, key="boundary_map")
@@ -324,6 +366,20 @@ def render_saved_lists_sidebar(storage: ListStorage):
                         st.success("Deleted")
                         st.rerun()
 
+            # Download button
+            loaded_list = storage.load_list(list_info['list_id'])
+            if loaded_list:
+                import json
+                json_str = json.dumps(loaded_list, indent=2, ensure_ascii=False)
+                st.download_button(
+                    label="📥 Download",
+                    data=json_str,
+                    file_name=f"{list_info['list_name'].replace(' ', '_')}.json",
+                    mime="application/json",
+                    key=f"download_{list_info['list_id']}",
+                    use_container_width=True
+                )
+
 
 def main():
     """Main application entry point."""
@@ -353,21 +409,23 @@ def main():
         # Show saved lists
         render_saved_lists_sidebar(storage)
 
-    # Initialize query engine
-    try:
-        query_engine = create_query_engine(st.session_state.parquet_path)
-    except Exception as e:
-        st.error(f"Error initializing query engine: {e}")
-        st.stop()
+    # Initialize query engine (or recreate if path changed)
+    if (st.session_state.query_engine is None or
+        st.session_state.query_engine.parquet_path != st.session_state.parquet_path):
+        try:
+            st.session_state.query_engine = create_query_engine(st.session_state.parquet_path)
+        except Exception as e:
+            st.error(f"Error initializing query engine: {e}")
+            st.stop()
 
     # Main content
     # Boundary selection section
-    selected_boundary = render_boundary_selector(query_engine)
+    render_boundary_selector(st.session_state.query_engine)
 
     st.write("---")
 
-    # Map visualization section
-    render_map_section(query_engine, selected_boundary)
+    # Map visualization section (uses st.session_state.selected_boundary)
+    render_map_section(st.session_state.query_engine, st.session_state.get('selected_boundary'))
 
     st.write("---")
 
