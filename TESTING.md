@@ -287,15 +287,18 @@ def test_get_countries():
     assert "US" in countries
     assert "GB" in countries
 
-# Unit tests for list_storage.py
+# Unit tests for database.py
 def test_save_and_load_list():
-    storage = ListStorage("./test_data")
-    list_id = storage.save_list(
-        "Test", "Desc",
-        [{"gers_id": "1", "name": "Test", "admin_level": 2, "country": "US"}]
+    db = Database("./test_data/test.db")
+    list_id = db.save_list(
+        list_name="Test",
+        description="Desc",
+        items=[{"division_id": "1", "name": "Test", "admin_level": 2, "country": "US"}],
+        list_type="boundary"
     )
-    loaded = storage.load_list(list_id)
+    loaded = db.load_list(list_id)
     assert loaded['list_name'] == "Test"
+    assert loaded['list_type'] == "boundary"
 ```
 
 ## Integration Testing Checklist

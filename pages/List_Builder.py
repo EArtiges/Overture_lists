@@ -98,7 +98,7 @@ def render_list_management():
             st.rerun()
     else:
         st.info("No boundaries added yet. Select and add boundaries using the filters above.")
-def render_save_section(storage: ListStorage):
+def render_save_section(storage: Database):
     """Render the save functionality."""
     col1, col2, col3 = st.columns([2, 1, 1])
         st.write("### 💾 Save List")
