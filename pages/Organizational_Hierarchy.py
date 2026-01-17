@@ -259,15 +259,20 @@ def render_relationships_table(storage: CRMMappingStorage, query_engine):
 
     st.write(f"**Total Relationships:** {len(relationships)}")
 
-    # Fetch division names for display
+    # Fetch division names from Overture for display
     relationships_with_names = []
     for rel in relationships:
-        # We need to get the division names from Overture
-        # For now, we'll just display the division IDs
-        # In a real implementation, you might want to cache these lookups
+        # Get division metadata from Overture (cached)
+        child_div = query_engine.get_division_by_id(rel['child_division_id'])
+        parent_div = query_engine.get_division_by_id(rel['parent_division_id'])
+
+        # Format names with fallback to ID if lookup fails
+        child_name = f"{child_div['name']} ({child_div['subtype']})" if child_div else rel['child_division_id'][:12] + '...'
+        parent_name = f"{parent_div['name']} ({parent_div['subtype']})" if parent_div else rel['parent_division_id'][:12] + '...'
+
         relationships_with_names.append({
-            'Child Division ID': rel['child_division_id'][:8] + '...',
-            'Parent Division ID': rel['parent_division_id'][:8] + '...',
+            'Child Division': child_name,
+            'Parent Division': parent_name,
             'Relationship Type': rel['relationship_type'],
             'Notes': rel.get('notes', '')[:50] if rel.get('notes') else '',
             '_id': rel['id']
@@ -275,7 +280,7 @@ def render_relationships_table(storage: CRMMappingStorage, query_engine):
 
     # Create DataFrame for display
     df_display = pd.DataFrame(relationships_with_names)
-    display_columns = ['Child Division ID', 'Parent Division ID', 'Relationship Type', 'Notes']
+    display_columns = ['Child Division', 'Parent Division', 'Relationship Type', 'Notes']
 
     st.dataframe(
         df_display[display_columns],
@@ -293,7 +298,7 @@ def render_relationships_table(storage: CRMMappingStorage, query_engine):
 
     if st.session_state.get('show_delete_rel_dialog', False):
         rel_options = [
-            f"{r['Child Division ID']} → {r['Parent Division ID']} ({r['Relationship Type']})"
+            f"{r['Child Division']} → {r['Parent Division']} ({r['Relationship Type']})"
             for r in relationships_with_names
         ]
         selected_to_delete = st.selectbox(
