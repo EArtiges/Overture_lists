@@ -33,7 +33,7 @@ def init_session_state():
         st.session_state.query_engine = None
     if 'division_selections' not in st.session_state:
         st.session_state.division_selections = []
-def render_mapping_form(storage: CRMMappingStorage):
+def render_mapping_form(storage: Database):
     """Render the form to add CRM account mappings."""
     st.subheader("🏢 Map to CRM Account")
     if st.session_state.selected_boundary is None:
@@ -107,7 +107,7 @@ def render_mapping_form(storage: CRMMappingStorage):
                     st.error(f"❌ Division **{selected['name']}** is already mapped to another CRM account")
                 else:
                     st.error(f"❌ Cannot add mapping: {error_msg}")
-def render_mappings_table(storage: CRMMappingStorage):
+def render_mappings_table(storage: Database):
     """Render the table of current CRM mappings."""
     st.subheader("📊 Current Mappings")
     mappings = storage.get_all_mappings()
@@ -154,7 +154,7 @@ def render_mappings_table(storage: CRMMappingStorage):
                 st.success("Mapping deleted")
         with col_b:
             if st.button("Cancel", use_container_width=True):
-def render_download_section(storage: CRMMappingStorage):
+def render_download_section(storage: Database):
     """Render the download functionality."""
     st.subheader("💾 Download Mappings")
         st.info("No mappings to download yet.")

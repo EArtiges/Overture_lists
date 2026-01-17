@@ -109,7 +109,7 @@ def render_division_selector(query_engine):
             st.success(f"Selected parent: {last_selected['name']}")
             st.rerun()
     return None
-def render_list_generation_section(query_engine, storage: CRMMappingStorage):
+def render_list_generation_section(query_engine, storage: Database):
     """Render the list generation controls."""
     st.subheader("🤖 Auto-Generate List")
     if st.session_state.selected_parent is None:
@@ -183,7 +183,7 @@ def render_generated_list_section():
         df[display_columns],
         hide_index=True,
         use_container_width=True
-def render_save_section(storage: ListDatabaseStorage):
+def render_save_section(storage: Database):
     """Render save functionality for generated lists."""
     st.subheader("💾 Save Generated List")
         st.info("Generate a list first to save it")
@@ -228,7 +228,7 @@ def render_save_section(storage: ListDatabaseStorage):
             file_name=f"{list_name.replace(' ', '_') if list_name else 'list'}.json",
             mime="application/json",
             use_container_width=True
-def render_saved_lists_sidebar(storage: ListDatabaseStorage):
+def render_saved_lists_sidebar(storage: Database):
     """Render saved lists in sidebar."""
     st.sidebar.header("📚 Saved Lists")
     saved_lists = storage.list_all_lists()

@@ -125,7 +125,7 @@ def render_save_section(storage: ListStorage):
                 )
                 st.success(f"List saved successfully! ID: {list_id}")
                 st.rerun()
-def render_saved_lists_sidebar(storage: ListDatabaseStorage):
+def render_saved_lists_sidebar(storage: Database):
     """Render saved lists in sidebar."""
     st.sidebar.header("📚 Saved Lists")
     saved_lists = storage.list_all_lists()

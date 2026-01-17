@@ -134,7 +134,7 @@ def render_client_list_management():
             with col_b:
                 if st.button("Cancel", use_container_width=True):
         st.info("No clients in list yet. Select and add clients from above.")
-def render_save_section(storage: ListDatabaseStorage):
+def render_save_section(storage: Database):
     """Render save functionality for CRM client lists."""
     col1, col2, col3 = st.columns([2, 1, 1])
         st.write("### 💾 Save Client List")
@@ -154,7 +154,7 @@ def render_save_section(storage: ListDatabaseStorage):
             elif not st.session_state.crm_client_list['clients']:
                 st.error("Cannot save an empty list")
             else:
-                # Save the list using ListDatabaseStorage (boundaries field for compatibility)
+                # Save the list using Database (boundaries field for compatibility)
                 list_id = storage.save_list(
                     list_name=st.session_state.crm_client_list['list_name'],
                     description=st.session_state.crm_client_list['description'],
@@ -162,7 +162,7 @@ def render_save_section(storage: ListDatabaseStorage):
                     list_type='crm_client'
                 )
                 st.success(f"Client list saved successfully! ID: {list_id}")
-def render_saved_lists_sidebar(storage: ListDatabaseStorage):
+def render_saved_lists_sidebar(storage: Database):
     """Render saved CRM client lists in sidebar."""
     st.sidebar.header("📚 Saved Client Lists")
     saved_lists = storage.list_all_lists()

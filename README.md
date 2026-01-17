@@ -324,9 +324,11 @@ Client lists are saved as JSON in `./crm_client_lists/`:
 - Proper cleanup on country/selection changes
 
 **Data Persistence:**
-- SQLite for CRM mappings with UNIQUE constraints for 1:1 relationships
-- JSON files for boundary lists and client lists
-- Separate storage classes: `ListStorage`, `CRMMappingStorage`, `CRMClientStorage`
+- Unified SQLite database (`data/app.db`) for all data with normalized schema
+- Single `Database` class handles all storage operations
+- UNIQUE constraints for 1:1 CRM mappings and organizational relationships
+- Automatic division metadata storage across all tables
+- SQL queries organized in separate `.sql` files for maintainability
 - Easy migration path to PostgreSQL or cloud databases
 
 **Performance Optimization:**

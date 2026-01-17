@@ -117,7 +117,7 @@ def render_division_selector(query_engine, prefix: str, label: str):
             st.success(f"Selected: {last_selected['name']}")
             st.rerun()
     return None
-def render_relationship_form(storage: CRMMappingStorage, query_engine):
+def render_relationship_form(storage: Database, query_engine):
     """Render the form to add organizational relationships."""
     st.subheader("🔗 Define Relationship")
     if st.session_state.child_boundary is None or st.session_state.parent_boundary is None:
@@ -187,7 +187,7 @@ def render_relationship_form(storage: CRMMappingStorage, query_engine):
                     st.error(f"❌ Cannot create a relationship from a division to itself")
                 else:
                     st.error(f"❌ Cannot add relationship: {error_msg}")
-def render_relationships_table(storage: CRMMappingStorage, query_engine):
+def render_relationships_table(storage: Database, query_engine):
     """Render the table of current relationships."""
     st.subheader("📊 Current Relationships")
     relationships = storage.get_all_relationships()
@@ -239,7 +239,7 @@ def render_relationships_table(storage: CRMMappingStorage, query_engine):
                 st.success("Relationship deleted")
         with col_b:
             if st.button("Cancel", use_container_width=True):
-def render_download_section(storage: CRMMappingStorage):
+def render_download_section(storage: Database):
     """Render the download functionality."""
     st.subheader("💾 Download Relationships")
         st.info("No relationships to download yet.")
