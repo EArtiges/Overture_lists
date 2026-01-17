@@ -11,6 +11,7 @@ from typing import List, Dict, Optional
 from datetime import datetime
 
 from .config import DB_PATH
+from .sql_loader import load_sql
 
 
 class CRMMappingStorage:
@@ -36,83 +37,15 @@ class CRMMappingStorage:
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
 
-        # Create mappings table with UNIQUE constraints for 1:1 mapping
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS mappings (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                system_id TEXT NOT NULL UNIQUE,
-                account_name TEXT NOT NULL,
-                custom_admin_level TEXT NOT NULL,
-                division_id TEXT NOT NULL UNIQUE,
-                division_name TEXT NOT NULL,
-                overture_subtype TEXT,
-                country TEXT NOT NULL,
-                geometry TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
+        # Load and execute schema from SQL file
+        schema_sql = load_sql('crm_mapping_storage', 'init_schema')
+        cursor.executescript(schema_sql)
 
         # Migration: Add geometry column if it doesn't exist (for existing databases)
         cursor.execute("PRAGMA table_info(mappings)")
         columns = [column[1] for column in cursor.fetchall()]
         if 'geometry' not in columns:
             cursor.execute("ALTER TABLE mappings ADD COLUMN geometry TEXT")
-
-        # Create index on commonly queried fields
-        cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_country
-            ON mappings(country)
-        """)
-
-        cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_system_id
-            ON mappings(system_id)
-        """)
-
-        # Create division_info table (shared metadata repository)
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS division_info (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                division_id TEXT NOT NULL UNIQUE,
-                division_name TEXT,
-                division_subtype TEXT,
-                country TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-
-        # Create relationships table for organizational hierarchy
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS relationships (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                child_division_id TEXT NOT NULL,
-                parent_division_id TEXT NOT NULL,
-                relationship_type TEXT NOT NULL DEFAULT 'reports_to',
-                notes TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                UNIQUE(child_division_id, parent_division_id, relationship_type),
-                CHECK(child_division_id != parent_division_id)
-            )
-        """)
-
-        # Create indexes for division_info
-        cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_division_info_division_id
-            ON division_info(division_id)
-        """)
-
-        # Create indexes for relationships
-        cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_child_division
-            ON relationships(child_division_id)
-        """)
-
-        cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_parent_division
-            ON relationships(parent_division_id)
-        """)
 
         conn.commit()
         conn.close()

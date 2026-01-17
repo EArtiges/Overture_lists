@@ -13,6 +13,7 @@ from datetime import datetime
 from typing import List, Dict, Optional
 
 from .config import DB_PATH
+from .sql_loader import load_sql
 
 
 class ListDatabaseStorage:
@@ -38,90 +39,9 @@ class ListDatabaseStorage:
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
 
-        # Create lists table
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS list (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                list_id TEXT NOT NULL UNIQUE,
-                list_type TEXT NOT NULL CHECK(list_type IN ('boundary', 'crm_client')),
-                list_name TEXT NOT NULL,
-                description TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-
-        # Create division_metadata table (stores all metadata with context type)
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS division_metadata (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                division_id TEXT NOT NULL,
-                metadata_type TEXT NOT NULL CHECK(metadata_type IN ('boundary', 'crm_client')),
-
-                -- Common fields
-                division_name TEXT,
-                division_subtype TEXT,
-                country TEXT,
-
-                -- CRM-specific fields (NULL for boundaries)
-                system_id TEXT,
-                account_name TEXT,
-                custom_admin_level TEXT,
-                geometry TEXT,
-
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-
-        # Create list_item junction table
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS list_item (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                list_id INTEGER NOT NULL,
-                metadata_id INTEGER NOT NULL,
-                item_order INTEGER NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (list_id) REFERENCES list(id) ON DELETE CASCADE,
-                FOREIGN KEY (metadata_id) REFERENCES division_metadata(id)
-            )
-        """)
-
-        # Create indexes for performance
-        cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_list_created_at
-            ON list(created_at DESC)
-        """)
-
-        cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_list_type
-            ON list(list_type)
-        """)
-
-        cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_list_item_list_id
-            ON list_item(list_id)
-        """)
-
-        cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_list_item_metadata_id
-            ON list_item(metadata_id)
-        """)
-
-        cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_list_item_order
-            ON list_item(list_id, item_order)
-        """)
-
-        cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_division_metadata_division_id
-            ON division_metadata(division_id)
-        """)
-
-        cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_division_metadata_type
-            ON division_metadata(metadata_type)
-        """)
+        # Load and execute schema from SQL file
+        schema_sql = load_sql('list_database_storage', 'init_schema')
+        cursor.executescript(schema_sql)
 
         conn.commit()
         conn.close()
