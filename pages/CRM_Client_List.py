@@ -9,7 +9,7 @@ import pandas as pd
 import json
 from typing import Optional, Dict
 
-from src.list_storage import ListStorage
+from src.list_database_storage import ListDatabaseStorage
 from src.crm_mapping_storage import CRMMappingStorage
 from src.components import render_crm_client_selector, create_map
 from streamlit_folium import st_folium
@@ -177,7 +177,7 @@ def render_client_list_management():
         st.info("No clients in list yet. Select and add clients from above.")
 
 
-def render_save_section(storage: ListStorage):
+def render_save_section(storage: ListDatabaseStorage):
     """Render save functionality for CRM client lists."""
     st.write("---")
 
@@ -205,17 +205,18 @@ def render_save_section(storage: ListStorage):
             elif not st.session_state.crm_client_list['clients']:
                 st.error("Cannot save an empty list")
             else:
-                # Save the list using ListStorage (boundaries field for compatibility)
+                # Save the list using ListDatabaseStorage (boundaries field for compatibility)
                 list_id = storage.save_list(
                     list_name=st.session_state.crm_client_list['list_name'],
                     description=st.session_state.crm_client_list['description'],
-                    boundaries=st.session_state.crm_client_list['clients']
+                    boundaries=st.session_state.crm_client_list['clients'],
+                    list_type='crm_client'
                 )
                 st.success(f"Client list saved successfully! ID: {list_id}")
                 st.rerun()
 
 
-def render_saved_lists_sidebar(storage: ListStorage):
+def render_saved_lists_sidebar(storage: ListDatabaseStorage):
     """Render saved CRM client lists in sidebar."""
     st.sidebar.header("📚 Saved Client Lists")
 
@@ -302,7 +303,7 @@ def main():
         st.write("---")
 
         # Initialize list storage for saved client lists
-        list_storage = ListStorage(data_dir="./crm_client_lists")
+        list_storage = ListDatabaseStorage(db_path="./data/lists.db")
 
         # Show saved lists
         render_saved_lists_sidebar(list_storage)

@@ -13,7 +13,6 @@ import os
 import json
 
 from src.query_engine import create_query_engine
-from src.list_storage import ListStorage
 from src.crm_mapping_storage import CRMMappingStorage
 from src.components import render_boundary_selector, render_map_section
 import sqlite3

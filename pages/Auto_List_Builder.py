@@ -11,7 +11,7 @@ import os
 from typing import List, Dict
 
 from src.query_engine import create_query_engine
-from src.list_storage import ListStorage
+from src.list_database_storage import ListDatabaseStorage
 from src.crm_mapping_storage import CRMMappingStorage
 
 page_title = "Auto List Builder"
@@ -260,7 +260,7 @@ def render_generated_list_section():
     )
 
 
-def render_save_section(storage: ListStorage):
+def render_save_section(storage: ListDatabaseStorage):
     """Render save functionality for generated lists."""
     st.write("---")
     st.subheader("💾 Save Generated List")
@@ -325,7 +325,7 @@ def render_save_section(storage: ListStorage):
         )
 
 
-def render_saved_lists_sidebar(storage: ListStorage):
+def render_saved_lists_sidebar(storage: ListDatabaseStorage):
     """Render saved lists in sidebar."""
     st.sidebar.header("📚 Saved Lists")
 
@@ -394,7 +394,7 @@ def main():
     )
 
     # Initialize storage
-    list_storage = ListStorage(data_dir="./list_data")
+    list_storage = ListDatabaseStorage(db_path="./data/lists.db")
     mapping_storage = CRMMappingStorage(db_path="./data/crm_mappings.db")
 
     # Sidebar configuration

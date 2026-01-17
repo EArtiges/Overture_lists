@@ -13,7 +13,7 @@ from typing import Optional, Dict
 import os
 
 from src.query_engine import create_query_engine
-from src.list_storage import ListStorage
+from src.list_database_storage import ListDatabaseStorage
 from src.components import render_boundary_selector, render_map_section
 
 page_title = "Overture Admin Boundary List Builder"
@@ -161,7 +161,7 @@ def render_save_section(storage: ListStorage):
                 st.rerun()
 
 
-def render_saved_lists_sidebar(storage: ListStorage):
+def render_saved_lists_sidebar(storage: ListDatabaseStorage):
     """Render saved lists in sidebar."""
     st.sidebar.header("📚 Saved Lists")
 
@@ -235,7 +235,7 @@ def main():
         st.write("---")
 
         # Initialize components
-        storage = ListStorage(data_dir="./list_data")
+        storage = ListDatabaseStorage(db_path="./data/lists.db")
 
         # Show saved lists
         render_saved_lists_sidebar(storage)

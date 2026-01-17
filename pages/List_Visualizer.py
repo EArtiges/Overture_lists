@@ -13,7 +13,7 @@ import json
 import os
 from typing import List, Dict, Optional
 
-from src.list_storage import ListStorage
+from src.list_database_storage import ListDatabaseStorage
 from src.query_engine import create_query_engine
 
 # Constants
@@ -61,34 +61,27 @@ def init_session_state():
 
 def discover_all_lists() -> List[Dict]:
     """
-    Discover lists from all storage locations.
+    Discover lists from database.
 
     Returns:
         List of dicts with list metadata including source information
     """
     all_lists = []
 
-    # Boundary lists
     try:
-        list_storage = ListStorage(data_dir="./list_data")
-        boundary_lists = list_storage.list_all_lists()
-        for lst in boundary_lists:
-            lst['source_dir'] = './list_data'
-            lst['source_label'] = 'Boundary Lists'
-            all_lists.append(lst)
-    except Exception as e:
-        st.error(f"Error loading boundary lists: {e}")
+        # Get all lists from database
+        db_storage = ListDatabaseStorage(db_path="./data/lists.db")
+        lists = db_storage.list_all_lists()
 
-    # CRM client lists
-    try:
-        client_storage = ListStorage(data_dir="./crm_client_lists")
-        client_lists = client_storage.list_all_lists()
-        for lst in client_lists:
-            lst['source_dir'] = './crm_client_lists'
-            lst['source_label'] = 'CRM Client Lists'
+        # Add source labels based on list_type
+        for lst in lists:
+            lst['source_label'] = (
+                'Boundary Lists' if lst['list_type'] == 'boundary'
+                else 'CRM Client Lists'
+            )
             all_lists.append(lst)
     except Exception as e:
-        st.error(f"Error loading CRM client lists: {e}")
+        st.error(f"Error loading lists from database: {e}")
 
     return all_lists
 
@@ -248,16 +241,14 @@ def render_list_selector_sidebar():
         selected_list = list_map[selected_option]
 
         # Check if selection changed
-        if (st.session_state.selected_list_id != selected_list['list_id'] or
-            st.session_state.selected_list_source != selected_list['source_dir']):
+        if st.session_state.selected_list_id != selected_list['list_id']:
 
-            # Load the list
-            storage = ListStorage(data_dir=selected_list['source_dir'])
+            # Load the list from database
+            storage = ListDatabaseStorage(db_path="./data/lists.db")
             loaded_list = storage.load_list(selected_list['list_id'])
 
             if loaded_list:
                 st.session_state.selected_list_id = selected_list['list_id']
-                st.session_state.selected_list_source = selected_list['source_dir']
                 st.session_state.loaded_list_data = loaded_list
 
                 # Initialize all items as visible
