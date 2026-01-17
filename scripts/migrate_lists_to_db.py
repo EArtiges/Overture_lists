@@ -18,7 +18,7 @@ import argparse
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.list_storage import ListStorage
-from src.list_database_storage import ListDatabaseStorage
+from src.database import Database
 
 
 def migrate_lists(dry_run=False):
@@ -39,7 +39,7 @@ def migrate_lists(dry_run=False):
 
     # Initialize database storage
     if not dry_run:
-        db_storage = ListDatabaseStorage()
+        db_storage = Database()
         print(f"✓ Database initialized at: {db_storage.db_path}")
     else:
         db_storage = None
