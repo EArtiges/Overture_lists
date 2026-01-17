@@ -164,6 +164,38 @@ class OvertureQueryEngine:
             return None
 
     @st.cache_data(ttl=3600)
+    def get_division_by_id(_self, division_id: str) -> Optional[Dict]:
+        """
+        Get division metadata by division ID.
+
+        Args:
+            division_id: Overture division ID
+
+        Returns:
+            Dict with division info (division_id, name, subtype, country) or None if not found
+        """
+        conn = _self._get_connection()
+        query = f"""
+            SELECT
+                id as division_id,
+                names.primary as name,
+                subtype,
+                country
+            FROM read_parquet('{_self.parquet_path}')
+            WHERE id = ?
+            LIMIT 1
+        """
+
+        try:
+            result = conn.execute(query, [division_id]).fetchdf()
+            if not result.empty:
+                return result.iloc[0].to_dict()
+            return None
+        except Exception as e:
+            st.error(f"Error fetching division by ID: {e}")
+            return None
+
+    @st.cache_data(ttl=3600)
     def search_boundaries(_self, country: str, search_term: str) -> pd.DataFrame:
         """
         Search for boundaries by name within a country.
