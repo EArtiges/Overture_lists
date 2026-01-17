@@ -303,7 +303,7 @@ def main():
         st.write("---")
 
         # Initialize list storage for saved client lists
-        list_storage = ListDatabaseStorage(db_path="./data/lists.db")
+        list_storage = ListDatabaseStorage()
 
         # Show saved lists
         render_saved_lists_sidebar(list_storage)
@@ -311,7 +311,7 @@ def main():
     st.write("---")
 
     # Load CRM mappings (clients) from database
-    crm_storage = CRMMappingStorage(db_path="./data/crm_mappings.db")
+    crm_storage = CRMMappingStorage()
     clients_data = crm_storage.get_all_mappings()
 
     if not clients_data:

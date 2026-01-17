@@ -10,21 +10,23 @@ import json
 from typing import List, Dict, Optional
 from datetime import datetime
 
+from .config import DB_PATH
+
 
 class CRMMappingStorage:
     """Manages CRM mapping data in SQLite database."""
 
-    def __init__(self, db_path: str = "./data/crm_mappings.db"):
+    def __init__(self, db_path: str = None):
         """
         Initialize CRM Mapping Storage.
 
         Args:
-            db_path: Path to SQLite database file
+            db_path: Path to SQLite database file (defaults to shared app database)
         """
-        self.db_path = db_path
+        self.db_path = db_path if db_path is not None else DB_PATH
 
         # Ensure directory exists
-        os.makedirs(os.path.dirname(db_path), exist_ok=True)
+        os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
 
         # Initialize database
         self._init_database()
@@ -68,9 +70,9 @@ class CRMMappingStorage:
             ON mappings(system_id)
         """)
 
-        # Create division_metadata table (shared metadata repository)
+        # Create division_info table (shared metadata repository)
         cursor.execute("""
-            CREATE TABLE IF NOT EXISTS division_metadata (
+            CREATE TABLE IF NOT EXISTS division_info (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 division_id TEXT NOT NULL UNIQUE,
                 division_name TEXT,
@@ -95,10 +97,10 @@ class CRMMappingStorage:
             )
         """)
 
-        # Create indexes for division_metadata
+        # Create indexes for division_info
         cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_division_metadata_division_id
-            ON division_metadata(division_id)
+            CREATE INDEX IF NOT EXISTS idx_division_info_division_id
+            ON division_info(division_id)
         """)
 
         # Create indexes for relationships
@@ -139,7 +141,7 @@ class CRMMappingStorage:
             sqlite3.IntegrityError: If system_id or division_id already exists
         """
         # Ensure division metadata exists
-        self.ensure_division_metadata(
+        self.ensure_division_info(
             division_id,
             division_name=division_name,
             division_subtype=overture_subtype,
@@ -382,7 +384,7 @@ class CRMMappingStorage:
 
     # Division metadata management methods
 
-    def ensure_division_metadata(self, division_id: str, division_name: Optional[str] = None,
+    def ensure_division_info(self, division_id: str, division_name: Optional[str] = None,
                                  division_subtype: Optional[str] = None,
                                  country: Optional[str] = None) -> bool:
         """
@@ -404,7 +406,7 @@ class CRMMappingStorage:
         try:
             # Check if metadata exists
             cursor.execute("""
-                SELECT id FROM division_metadata WHERE division_id = ?
+                SELECT id FROM division_info WHERE division_id = ?
             """, (division_id,))
 
             existing = cursor.fetchone()
@@ -430,14 +432,14 @@ class CRMMappingStorage:
                         update_values.append(division_id)
 
                         cursor.execute(f"""
-                            UPDATE division_metadata
+                            UPDATE division_info
                             SET {', '.join(update_fields)}
                             WHERE division_id = ?
                         """, update_values)
             else:
                 # Insert new metadata
                 cursor.execute("""
-                    INSERT INTO division_metadata
+                    INSERT INTO division_info
                     (division_id, division_name, division_subtype, country)
                     VALUES (?, ?, ?, ?)
                 """, (division_id, division_name, division_subtype, country))
@@ -450,7 +452,7 @@ class CRMMappingStorage:
         finally:
             conn.close()
 
-    def get_division_metadata(self, division_id: str) -> Optional[Dict]:
+    def get_division_info(self, division_id: str) -> Optional[Dict]:
         """
         Get division metadata by division ID.
 
@@ -465,7 +467,7 @@ class CRMMappingStorage:
         cursor = conn.cursor()
 
         cursor.execute("""
-            SELECT * FROM division_metadata WHERE division_id = ?
+            SELECT * FROM division_info WHERE division_id = ?
         """, (division_id,))
 
         row = cursor.fetchone()
@@ -499,7 +501,7 @@ class CRMMappingStorage:
         """
         # Ensure division metadata exists if provided
         if child_metadata:
-            self.ensure_division_metadata(
+            self.ensure_division_info(
                 child_division_id,
                 division_name=child_metadata.get('division_name') or child_metadata.get('name'),
                 division_subtype=child_metadata.get('division_subtype') or child_metadata.get('subtype'),
@@ -507,7 +509,7 @@ class CRMMappingStorage:
             )
 
         if parent_metadata:
-            self.ensure_division_metadata(
+            self.ensure_division_info(
                 parent_division_id,
                 division_name=parent_metadata.get('division_name') or parent_metadata.get('name'),
                 division_subtype=parent_metadata.get('division_subtype') or parent_metadata.get('subtype'),

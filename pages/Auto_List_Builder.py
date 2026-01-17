@@ -394,8 +394,8 @@ def main():
     )
 
     # Initialize storage
-    list_storage = ListDatabaseStorage(db_path="./data/lists.db")
-    mapping_storage = CRMMappingStorage(db_path="./data/crm_mappings.db")
+    list_storage = ListDatabaseStorage()
+    mapping_storage = CRMMappingStorage()
 
     # Sidebar configuration
     with st.sidebar:

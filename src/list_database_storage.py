@@ -12,21 +12,23 @@ import hashlib
 from datetime import datetime
 from typing import List, Dict, Optional
 
+from .config import DB_PATH
+
 
 class ListDatabaseStorage:
     """Manages list data in SQLite database with normalized schema."""
 
-    def __init__(self, db_path: str = "./data/lists.db"):
+    def __init__(self, db_path: str = None):
         """
         Initialize List Database Storage.
 
         Args:
-            db_path: Path to SQLite database file
+            db_path: Path to SQLite database file (defaults to shared app database)
         """
-        self.db_path = db_path
+        self.db_path = db_path if db_path is not None else DB_PATH
 
         # Ensure directory exists
-        os.makedirs(os.path.dirname(db_path), exist_ok=True)
+        os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
 
         # Initialize database
         self._init_database()

@@ -235,7 +235,7 @@ def main():
         st.write("---")
 
         # Initialize components
-        storage = ListDatabaseStorage(db_path="./data/lists.db")
+        storage = ListDatabaseStorage()
 
         # Show saved lists
         render_saved_lists_sidebar(storage)

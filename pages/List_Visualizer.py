@@ -70,7 +70,7 @@ def discover_all_lists() -> List[Dict]:
 
     try:
         # Get all lists from database
-        db_storage = ListDatabaseStorage(db_path="./data/lists.db")
+        db_storage = ListDatabaseStorage()
         lists = db_storage.list_all_lists()
 
         # Add source labels based on list_type
@@ -244,7 +244,7 @@ def render_list_selector_sidebar():
         if st.session_state.selected_list_id != selected_list['list_id']:
 
             # Load the list from database
-            storage = ListDatabaseStorage(db_path="./data/lists.db")
+            storage = ListDatabaseStorage()
             loaded_list = storage.load_list(selected_list['list_id'])
 
             if loaded_list:

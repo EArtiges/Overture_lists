@@ -269,7 +269,7 @@ def main():
     )
 
     # Initialize CRM Mapping Storage
-    mapping_storage = CRMMappingStorage(db_path="./data/crm_mappings.db")
+    mapping_storage = CRMMappingStorage()
 
     # Sidebar configuration
     with st.sidebar:
