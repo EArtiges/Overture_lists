@@ -16,7 +16,7 @@ st.set_page_config(
 st.title("🗺️ Overture Admin Boundary Tools")
 
 st.write("""
-Welcome to the Overture Admin Boundary Tools! This application provides three complementary tools
+Welcome to the Overture Admin Boundary Tools! This application provides six complementary tools
 for working with administrative boundaries from Overture Maps Foundation data.
 """)
 
@@ -70,6 +70,55 @@ with col3:
 
 st.write("---")
 
+col4, col5, col6 = st.columns(3)
+
+with col4:
+    st.subheader("🔗 Organizational Hierarchy")
+    st.write("""
+    Define reporting relationships between divisions.
+
+    **Features:**
+    - Select parent and child divisions
+    - Build reporting hierarchies
+    - Export relationship mappings
+    - Visualize connections on map
+
+    **Use Case:** Defining organizational or sales territory hierarchies.
+    """)
+    st.info("👈 Navigate to **Organizational Hierarchy** from the sidebar")
+
+with col5:
+    st.subheader("🤖 Auto List Builder")
+    st.write("""
+    Automatically generate lists based on criteria.
+
+    **Features:**
+    - Automated boundary collection
+    - Smart filtering and selection
+    - Batch list generation
+    - Quick export capabilities
+
+    **Use Case:** Rapidly creating lists based on predefined rules.
+    """)
+    st.info("👈 Navigate to **Auto List Builder** from the sidebar")
+
+with col6:
+    st.subheader("🗺️ List Visualizer")
+    st.write("""
+    Visualize saved lists on interactive maps.
+
+    **Features:**
+    - View all list items simultaneously
+    - Color-coded multi-layer maps
+    - Toggle item visibility
+    - Supports both boundary and CRM lists
+
+    **Use Case:** Visual exploration and comparison of saved lists.
+    """)
+    st.info("👈 Navigate to **List Visualizer** from the sidebar")
+
+st.write("---")
+
 st.subheader("🚀 Getting Started")
 
 st.write("""
@@ -78,10 +127,13 @@ st.write("""
 3. **Visualize** territories on the interactive map
 4. **Export** your work as needed
 
-The three tools work together in a complete workflow:
+The six tools work together in a complete workflow:
 - **List Builder**: Curate collections of Overture boundaries
 - **CRM Mapping**: Link boundaries to your CRM accounts with custom metadata
 - **CRM Client List**: Build targeted lists from your mapped clients
+- **Organizational Hierarchy**: Define reporting relationships between divisions
+- **Auto List Builder**: Rapidly generate lists based on criteria
+- **List Visualizer**: Visualize and explore your saved lists on maps
 """)
 
 st.write("---")
