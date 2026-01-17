@@ -7,9 +7,6 @@ boundaries from Overture Maps Foundation data.
 
 import streamlit as st
 import pandas as pd
-import folium
-from streamlit_folium import st_folium
-from typing import Optional, Dict
 import os
 
 from src.query_engine import create_query_engine

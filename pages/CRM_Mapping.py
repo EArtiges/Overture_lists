@@ -6,14 +6,10 @@ Map Overture administrative divisions to CRM accounts with custom metadata.
 
 import streamlit as st
 import pandas as pd
-import folium
-from streamlit_folium import st_folium
-from typing import Optional, Dict
 import os
 import json
 
 from src.query_engine import create_query_engine
-from src.list_storage import ListStorage
 from src.crm_mapping_storage import CRMMappingStorage
 from src.components import render_boundary_selector, render_map_section
 import sqlite3

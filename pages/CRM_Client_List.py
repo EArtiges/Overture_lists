@@ -7,7 +7,6 @@ Create and export lists of CRM clients based on pre-mapped divisions.
 import streamlit as st
 import pandas as pd
 import json
-from typing import Optional, Dict
 
 from src.list_storage import ListStorage
 from src.crm_mapping_storage import CRMMappingStorage
