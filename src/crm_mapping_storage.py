@@ -68,6 +68,31 @@ class CRMMappingStorage:
             ON mappings(system_id)
         """)
 
+        # Create relationships table for organizational hierarchy
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS relationships (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                child_division_id TEXT NOT NULL,
+                parent_division_id TEXT NOT NULL,
+                relationship_type TEXT NOT NULL DEFAULT 'reports_to',
+                notes TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(child_division_id, parent_division_id, relationship_type),
+                CHECK(child_division_id != parent_division_id)
+            )
+        """)
+
+        # Create indexes for relationships
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_child_division
+            ON relationships(child_division_id)
+        """)
+
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_parent_division
+            ON relationships(parent_division_id)
+        """)
+
         conn.commit()
         conn.close()
 
@@ -325,4 +350,196 @@ class CRMMappingStorage:
                 'geometry': m.get('geometry')
             }
             for m in mappings
+        ]
+
+    # Relationship management methods
+
+    def add_relationship(self, child_division_id: str, parent_division_id: str,
+                        relationship_type: str = 'reports_to', notes: Optional[str] = None) -> bool:
+        """
+        Add a new organizational relationship between divisions.
+
+        Args:
+            child_division_id: Overture division ID of the subordinate
+            parent_division_id: Overture division ID of the supervisor
+            relationship_type: Type of relationship (e.g., 'reports_to', 'coordinates_with')
+            notes: Optional notes about this relationship
+
+        Returns:
+            True if successful, False otherwise
+
+        Raises:
+            sqlite3.IntegrityError: If relationship already exists or self-reference
+        """
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        try:
+            cursor.execute("""
+                INSERT INTO relationships
+                (child_division_id, parent_division_id, relationship_type, notes)
+                VALUES (?, ?, ?, ?)
+            """, (child_division_id, parent_division_id, relationship_type, notes))
+
+            conn.commit()
+            return True
+        except sqlite3.IntegrityError as e:
+            conn.rollback()
+            raise e
+        finally:
+            conn.close()
+
+    def get_all_relationships(self) -> List[Dict]:
+        """
+        Get all organizational relationships.
+
+        Returns:
+            List of relationship dictionaries
+        """
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT id, child_division_id, parent_division_id,
+                   relationship_type, notes, created_at
+            FROM relationships
+            ORDER BY created_at DESC
+        """)
+
+        rows = cursor.fetchall()
+        conn.close()
+
+        return [dict(row) for row in rows]
+
+    def get_children(self, parent_division_id: str) -> List[Dict]:
+        """
+        Get all divisions that report to the specified parent.
+
+        Args:
+            parent_division_id: Overture division ID
+
+        Returns:
+            List of relationship dictionaries
+        """
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT id, child_division_id, parent_division_id,
+                   relationship_type, notes, created_at
+            FROM relationships
+            WHERE parent_division_id = ?
+            ORDER BY created_at DESC
+        """, (parent_division_id,))
+
+        rows = cursor.fetchall()
+        conn.close()
+
+        return [dict(row) for row in rows]
+
+    def get_parents(self, child_division_id: str) -> List[Dict]:
+        """
+        Get all divisions that the specified child reports to.
+
+        Args:
+            child_division_id: Overture division ID
+
+        Returns:
+            List of relationship dictionaries
+        """
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT id, child_division_id, parent_division_id,
+                   relationship_type, notes, created_at
+            FROM relationships
+            WHERE child_division_id = ?
+            ORDER BY created_at DESC
+        """, (child_division_id,))
+
+        rows = cursor.fetchall()
+        conn.close()
+
+        return [dict(row) for row in rows]
+
+    def delete_relationship(self, relationship_id: int) -> bool:
+        """
+        Delete a relationship by ID.
+
+        Args:
+            relationship_id: Database ID of the relationship
+
+        Returns:
+            True if successful, False otherwise
+        """
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        try:
+            cursor.execute("DELETE FROM relationships WHERE id = ?", (relationship_id,))
+            conn.commit()
+            return cursor.rowcount > 0
+        except Exception:
+            conn.rollback()
+            return False
+        finally:
+            conn.close()
+
+    def get_relationship_count(self) -> int:
+        """
+        Get total count of relationships.
+
+        Returns:
+            Number of relationships
+        """
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        cursor.execute("SELECT COUNT(*) FROM relationships")
+        count = cursor.fetchone()[0]
+
+        conn.close()
+        return count
+
+    def clear_all_relationships(self) -> bool:
+        """
+        Delete all relationships.
+
+        Returns:
+            True if successful
+        """
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        try:
+            cursor.execute("DELETE FROM relationships")
+            conn.commit()
+            return True
+        except Exception:
+            conn.rollback()
+            return False
+        finally:
+            conn.close()
+
+    def export_relationships_to_json(self) -> List[Dict]:
+        """
+        Export all relationships in JSON-compatible format.
+
+        Returns:
+            List of relationship dictionaries without DB metadata
+        """
+        relationships = self.get_all_relationships()
+
+        return [
+            {
+                'child_division_id': r['child_division_id'],
+                'parent_division_id': r['parent_division_id'],
+                'relationship_type': r['relationship_type'],
+                'notes': r.get('notes')
+            }
+            for r in relationships
         ]
