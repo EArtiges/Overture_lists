@@ -106,6 +106,9 @@ def render_mapping_form(storage: CRMMappingStorage):
         else:
             # Try to add the mapping (DB will enforce 1:1 constraints)
             try:
+                # Get geometry from selected boundary if available
+                geometry = selected.get('geometry')
+
                 storage.add_mapping(
                     system_id=custom_id.strip(),
                     account_name=account_name.strip(),
@@ -113,7 +116,8 @@ def render_mapping_form(storage: CRMMappingStorage):
                     division_id=selected['division_id'],
                     division_name=selected['name'],
                     overture_subtype=selected['subtype'],
-                    country=selected['country']
+                    country=selected['country'],
+                    geometry=geometry
                 )
                 st.success(f"✅ Added mapping for {selected['name']}")
                 st.rerun()

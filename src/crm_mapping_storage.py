@@ -6,6 +6,7 @@ Manages CRM mapping data using SQLite database with 1:1 constraint enforcement.
 
 import sqlite3
 import os
+import json
 from typing import List, Dict, Optional
 from datetime import datetime
 
@@ -44,10 +45,17 @@ class CRMMappingStorage:
                 division_name TEXT NOT NULL,
                 overture_subtype TEXT,
                 country TEXT NOT NULL,
+                geometry TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
+
+        # Migration: Add geometry column if it doesn't exist (for existing databases)
+        cursor.execute("PRAGMA table_info(mappings)")
+        columns = [column[1] for column in cursor.fetchall()]
+        if 'geometry' not in columns:
+            cursor.execute("ALTER TABLE mappings ADD COLUMN geometry TEXT")
 
         # Create index on commonly queried fields
         cursor.execute("""
@@ -65,7 +73,7 @@ class CRMMappingStorage:
 
     def add_mapping(self, system_id: str, account_name: str, custom_admin_level: str,
                    division_id: str, division_name: str, overture_subtype: str,
-                   country: str) -> bool:
+                   country: str, geometry: Optional[Dict] = None) -> bool:
         """
         Add a new CRM mapping.
 
@@ -77,6 +85,7 @@ class CRMMappingStorage:
             division_name: Division name
             overture_subtype: Overture subtype
             country: Country code
+            geometry: Optional GeoJSON geometry dict
 
         Returns:
             True if successful, False if constraint violation
@@ -87,14 +96,17 @@ class CRMMappingStorage:
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
 
+        # Serialize geometry to JSON string if provided
+        geometry_str = json.dumps(geometry) if geometry else None
+
         try:
             cursor.execute("""
                 INSERT INTO mappings
                 (system_id, account_name, custom_admin_level, division_id,
-                 division_name, overture_subtype, country)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                 division_name, overture_subtype, country, geometry)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """, (system_id, account_name, custom_admin_level, division_id,
-                  division_name, overture_subtype, country))
+                  division_name, overture_subtype, country, geometry_str))
 
             conn.commit()
             return True
@@ -110,7 +122,7 @@ class CRMMappingStorage:
         Get all CRM mappings.
 
         Returns:
-            List of mapping dictionaries
+            List of mapping dictionaries with geometry parsed as dict
         """
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
@@ -119,7 +131,7 @@ class CRMMappingStorage:
         cursor.execute("""
             SELECT id, system_id, account_name, custom_admin_level,
                    division_id, division_name, overture_subtype, country,
-                   created_at, updated_at
+                   geometry, created_at, updated_at
             FROM mappings
             ORDER BY created_at DESC
         """)
@@ -127,7 +139,18 @@ class CRMMappingStorage:
         rows = cursor.fetchall()
         conn.close()
 
-        return [dict(row) for row in rows]
+        # Parse geometry from JSON string to dict
+        mappings = []
+        for row in rows:
+            mapping = dict(row)
+            if mapping['geometry']:
+                try:
+                    mapping['geometry'] = json.loads(mapping['geometry'])
+                except (json.JSONDecodeError, TypeError):
+                    mapping['geometry'] = None
+            mappings.append(mapping)
+
+        return mappings
 
     def get_mapping_by_system_id(self, system_id: str) -> Optional[Dict]:
         """
@@ -137,7 +160,7 @@ class CRMMappingStorage:
             system_id: CRM system ID
 
         Returns:
-            Mapping dictionary or None if not found
+            Mapping dictionary with geometry parsed or None if not found
         """
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
@@ -146,7 +169,7 @@ class CRMMappingStorage:
         cursor.execute("""
             SELECT id, system_id, account_name, custom_admin_level,
                    division_id, division_name, overture_subtype, country,
-                   created_at, updated_at
+                   geometry, created_at, updated_at
             FROM mappings
             WHERE system_id = ?
         """, (system_id,))
@@ -154,7 +177,15 @@ class CRMMappingStorage:
         row = cursor.fetchone()
         conn.close()
 
-        return dict(row) if row else None
+        if row:
+            mapping = dict(row)
+            if mapping['geometry']:
+                try:
+                    mapping['geometry'] = json.loads(mapping['geometry'])
+                except (json.JSONDecodeError, TypeError):
+                    mapping['geometry'] = None
+            return mapping
+        return None
 
     def get_mapping_by_division_id(self, division_id: str) -> Optional[Dict]:
         """
@@ -164,7 +195,7 @@ class CRMMappingStorage:
             division_id: Overture division ID
 
         Returns:
-            Mapping dictionary or None if not found
+            Mapping dictionary with geometry parsed or None if not found
         """
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
@@ -173,7 +204,7 @@ class CRMMappingStorage:
         cursor.execute("""
             SELECT id, system_id, account_name, custom_admin_level,
                    division_id, division_name, overture_subtype, country,
-                   created_at, updated_at
+                   geometry, created_at, updated_at
             FROM mappings
             WHERE division_id = ?
         """, (division_id,))
@@ -181,7 +212,15 @@ class CRMMappingStorage:
         row = cursor.fetchone()
         conn.close()
 
-        return dict(row) if row else None
+        if row:
+            mapping = dict(row)
+            if mapping['geometry']:
+                try:
+                    mapping['geometry'] = json.loads(mapping['geometry'])
+                except (json.JSONDecodeError, TypeError):
+                    mapping['geometry'] = None
+            return mapping
+        return None
 
     def delete_mapping(self, mapping_id: int) -> bool:
         """
@@ -282,7 +321,8 @@ class CRMMappingStorage:
                 'division_id': m['division_id'],
                 'division_name': m['division_name'],
                 'overture_subtype': m['overture_subtype'],
-                'country': m['country']
+                'country': m['country'],
+                'geometry': m.get('geometry')
             }
             for m in mappings
         ]

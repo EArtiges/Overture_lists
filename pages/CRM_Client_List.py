@@ -9,7 +9,7 @@ import pandas as pd
 import json
 from typing import Optional, Dict
 
-from src.crm_client_storage import CRMClientStorage
+from src.crm_mapping_storage import CRMMappingStorage
 from src.list_storage import ListStorage
 from src.components import render_crm_client_selector, create_map
 from streamlit_folium import st_folium
@@ -297,7 +297,7 @@ def main():
     # Sidebar configuration and saved lists
     with st.sidebar:
         st.header("⚙️ Configuration")
-        st.info("CRM clients are loaded from `crm_data/clients.json`")
+        st.info("CRM clients are loaded from SQLite database (CRM Mappings)")
 
         st.write("---")
 
@@ -309,14 +309,14 @@ def main():
 
     st.write("---")
 
-    # Load CRM client data
-    crm_storage = CRMClientStorage()
-    clients_data = crm_storage.load_clients()
+    # Load CRM mappings (clients) from database
+    crm_storage = CRMMappingStorage(db_path="./data/crm_mappings.db")
+    clients_data = crm_storage.get_all_mappings()
 
     if not clients_data:
         st.error(
-            "No CRM client data found. Please ensure `crm_data/clients.json` exists. "
-            "You can create this file by exporting mappings from the CRM Mapping page."
+            "No CRM mappings found in database. "
+            "Please create CRM mappings first in the CRM Mapping page."
         )
         st.stop()
 
