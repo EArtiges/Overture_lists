@@ -1,10 +1,10 @@
 # Overture Admin Boundary Tools
 
-A multi-page Streamlit application for working with administrative boundaries from [Overture Maps Foundation](https://overturemaps.org/) data. Create boundary lists and map divisions to CRM accounts with custom metadata.
+A multi-page Streamlit application for working with administrative boundaries from [Overture Maps Foundation](https://overturemaps.org/) data. Create boundary lists, map divisions to CRM accounts, and build targeted client lists from mapped territories.
 
 ## Overview
 
-This application provides two main tools:
+This application provides three integrated tools:
 
 ### 📋 List Builder
 Create and manage collections of administrative boundaries:
@@ -15,21 +15,33 @@ Create and manage collections of administrative boundaries:
 - Persistent JSON storage
 
 ### 🏢 CRM Mapping
-Map Overture divisions to your CRM accounts:
+Map Overture divisions to your CRM accounts with persistent storage:
 - Select divisions using hierarchical navigation
 - Assign custom fields: System ID, Account Name, Admin Level
-- Build multiple mappings in one session
-- Export mappings as JSON or CSV
+- Build multiple mappings with 1:1 constraint enforcement
+- SQLite persistence across sessions
+- Export mappings as JSON (with geometry) or CSV
 - Link geographic territories to business data
+
+### 👥 CRM Client List Builder
+Build targeted client lists from pre-mapped territories:
+- Filter clients by country and mapped territories
+- Visualize client territories on interactive maps
+- Create and manage client lists
+- Save, load, and download client lists
+- Leverage existing CRM mappings for targeted marketing
 
 ## Architecture
 
-- **Frontend:** Streamlit multi-page application
+- **Frontend:** Streamlit multi-page application (3 pages)
 - **Data Query:** DuckDB (queries Parquet files directly from S3)
 - **Data Source:** Overture Maps Foundation divisions dataset
-- **Storage:** JSON flat files with Docker volume persistence
+- **Storage:**
+  - SQLite for CRM mappings (persistent, 1:1 constraint enforcement)
+  - JSON flat files for boundary lists and client lists
+  - Docker volume persistence for all data
 - **Map Rendering:** Folium with geometry simplification for performance
-- **Code Structure:** Shared components for DRY architecture
+- **Code Structure:** Shared components and utilities for DRY architecture
 
 ## Quick Start
 
@@ -42,7 +54,12 @@ docker-compose up -d
 # Access the app at http://localhost:8501
 ```
 
-The application will mount `./list_data` and `./pages` as volumes for persistent storage.
+The application will mount multiple volumes for persistent storage:
+- `./list_data` - Boundary lists (JSON)
+- `./crm_client_lists` - Client lists (JSON)
+- `./crm_data` - CRM client data (clients.json)
+- `./data` - SQLite database for CRM mappings
+- `./pages` - Application pages
 
 ### Option 2: Local Development
 
@@ -128,14 +145,42 @@ Use the "Parquet Data Path" input in the sidebar (changes persist during session
    - **Account Name:** Account name from your system
    - **Custom Admin Level:** Your own administrative nomenclature
 
-3. **Build Mappings:** Create multiple mappings in one session
+3. **Build Mappings:** Create multiple mappings with constraint enforcement
    - View all mappings in data table
+   - 1:1 constraint: each CRM ID maps to one division, each division to one CRM ID
+   - Clear error messages on constraint violations
    - Remove individual mappings or clear all
+   - SQLite persistence across sessions
 
 4. **Export:** Download your mappings
-   - **JSON format:** Structured data for APIs
-   - **CSV format:** Spreadsheet-compatible
-   - Includes 4 columns: division_id, system_id, account_name, custom_admin_level
+   - **JSON format:** Structured data with full geometry for APIs
+   - **CSV format:** Spreadsheet-compatible (no geometry)
+   - Includes: division_id, system_id, account_name, custom_admin_level, geometry (JSON only)
+
+### CRM Client List Builder Workflow
+
+1. **Load Client Data:** Place your CRM client data in `crm_data/clients.json`
+   - Required fields: system_id, account_name, country, custom_admin_level
+   - Automatically loaded on page load
+
+2. **Select Territory:** Filter clients by country and mapped division
+   - Country dropdown shows available client countries
+   - Client dropdown filters by selected country
+   - Only shows clients with CRM mappings
+   - Visualize selected client territory on map
+
+3. **Build Client List:** Create targeted marketing lists
+   - Add clients to your working list
+   - Enter list name and description
+   - View all clients in data table
+   - Remove individual clients or clear all
+
+4. **Save & Export:** Persist your client lists
+   - Save lists to `crm_client_lists/` directory
+   - Load previously saved lists from sidebar
+   - Delete saved lists
+   - Download as JSON for CRM integration
+   - Includes: list metadata, client details, division IDs
 
 ## Features
 
@@ -155,7 +200,7 @@ Use the "Parquet Data Path" input in the sidebar (changes persist during session
 ### Data Management
 
 #### List Builder
-Lists are saved as JSON in `./list_data/`:
+Boundary lists are saved as JSON in `./list_data/`:
 
 ```json
 {
@@ -175,14 +220,60 @@ Lists are saved as JSON in `./list_data/`:
 ```
 
 #### CRM Mapping
-Exports include only essential columns:
+Mappings are stored in SQLite database at `./data/crm_mappings.db`:
 
+**Schema:**
+- Table: `crm_mappings`
+- Columns: `id`, `division_id` (UNIQUE), `system_id` (UNIQUE), `account_name`, `custom_admin_level`, `created_at`
+- Constraints: UNIQUE on both `division_id` and `system_id` for bidirectional 1:1 enforcement
+
+**JSON Export (with geometry):**
 ```json
 [
   {
     "division_id": "08f7...",
     "system_id": "ACC-12345",
     "account_name": "Acme Corp - West",
+    "custom_admin_level": "Sales Territory",
+    "geometry": {...}
+  }
+]
+```
+
+**CSV Export (no geometry):**
+```csv
+division_id,system_id,account_name,custom_admin_level
+08f7...,ACC-12345,Acme Corp - West,Sales Territory
+```
+
+#### CRM Client List Builder
+Client lists are saved as JSON in `./crm_client_lists/`:
+
+```json
+{
+  "list_id": "xyz789...",
+  "list_name": "Q1 2026 Campaign Targets",
+  "description": "High-value clients in expansion territories",
+  "created_at": "2026-01-15T14:30:00Z",
+  "clients": [
+    {
+      "system_id": "ACC-12345",
+      "account_name": "Acme Corp - West",
+      "country": "US",
+      "custom_admin_level": "Sales Territory",
+      "division_id": "08f7..."
+    }
+  ]
+}
+```
+
+**Client Data Format (`crm_data/clients.json`):**
+```json
+[
+  {
+    "system_id": "ACC-12345",
+    "account_name": "Acme Corp - West",
+    "country": "US",
     "custom_admin_level": "Sales Territory"
   }
 ]
@@ -195,12 +286,20 @@ Exports include only essential columns:
 ├── app.py                       # Home page / landing page
 ├── pages/
 │   ├── List_Builder.py         # List Builder page
-│   └── CRM_Mapping.py          # CRM Mapping page
+│   ├── CRM_Mapping.py          # CRM Mapping page
+│   └── CRM_Client_List.py      # CRM Client List Builder page
 ├── src/
 │   ├── query_engine.py         # DuckDB query functions (cached)
-│   ├── list_storage.py         # JSON storage management
-│   └── shared_components.py    # Shared UI components (DRY)
-├── list_data/                   # Persistent storage directory
+│   ├── list_storage.py         # JSON storage for boundary lists
+│   ├── crm_mapping_storage.py  # SQLite storage for CRM mappings
+│   ├── crm_client_storage.py   # Client data loader with caching
+│   └── components.py           # Shared UI components (DRY)
+├── list_data/                   # Boundary lists (JSON)
+├── crm_client_lists/            # Client lists (JSON)
+├── crm_data/
+│   └── clients.json            # CRM client data
+├── data/
+│   └── crm_mappings.db         # SQLite database for mappings
 ├── requirements.txt             # Python dependencies
 ├── Dockerfile                   # Container configuration
 ├── docker-compose.yml           # Docker orchestration
@@ -221,8 +320,14 @@ Exports include only essential columns:
 
 **Session State Management:**
 - Each page maintains its own state keys (e.g., `crm_selected_boundary` vs `selected_boundary`)
-- Common state managed via `init_common_session_state()`
+- Common state managed via shared initialization functions
 - Proper cleanup on country/selection changes
+
+**Data Persistence:**
+- SQLite for CRM mappings with UNIQUE constraints for 1:1 relationships
+- JSON files for boundary lists and client lists
+- Separate storage classes: `ListStorage`, `CRMMappingStorage`, `CRMClientStorage`
+- Easy migration path to PostgreSQL or cloud databases
 
 **Performance Optimization:**
 - Geometry simplification: `ST_Simplify(geometry, 0.001)` reduces polygon complexity by ~100 meters tolerance
@@ -263,22 +368,34 @@ st.set_page_config(
 This is a proof-of-concept with intentional scope limitations:
 - Single-user tool (no authentication)
 - No multi-user access or list sharing
-- No bulk import/export beyond JSON/CSV
 - Map shows only one boundary at a time
 - No map-based selection (dropdown-only navigation)
-- Session-based storage (no database)
+- Client data must be manually placed in `crm_data/clients.json`
+- No live CRM integration (import/export via JSON/CSV only)
+
+## Recent Enhancements (Implemented)
+
+✅ **SQLite Persistence for CRM Mappings** - Replaced session-based storage with SQLite database, including 1:1 constraint enforcement
+
+✅ **CRM Client List Builder** - New page for building targeted client lists from mapped territories
+
+✅ **Save/Load Functionality** - Full save/load workflow for both boundary lists and client lists
+
+✅ **Enhanced Exports** - JSON exports now include full geometry data for GIS integration
+
+✅ **Data Persistence** - Docker volumes for all data directories (list_data, crm_data, crm_client_lists, data)
 
 ## Future Enhancements
 
 When migrating from POC to production:
-- Replace flat files with SQL database
 - Add multi-user support and authentication
 - Implement list sharing and permissions
 - Add bulk operations and advanced filtering
-- Migrate to cloud storage (Azure Blob, S3)
-- Enable full list visualization on map
+- Migrate to cloud storage (Azure Blob, S3) or managed database (PostgreSQL, Azure SQL)
+- Enable full list visualization on map (multiple boundaries at once)
 - Add spatial queries (boundaries within radius, overlaps, etc.)
-- Support batch CRM mapping uploads
+- Support live CRM integration via API
+- Add batch import from CSV for client data and mappings
 
 ## Troubleshooting
 
@@ -324,9 +441,33 @@ When migrating from POC to production:
 
 ### Docker volume permissions
 ```bash
-# Ensure list_data directory has correct permissions
-chmod 777 list_data
+# Ensure data directories have correct permissions
+chmod 777 list_data crm_client_lists crm_data data
 ```
+
+### CRM Mapping constraint violations
+
+**Symptom:** Error message when adding mapping: "Division already mapped to a different CRM account" or "CRM ID already mapped to a different division"
+
+**Cause:** The 1:1 constraint enforcement prevents duplicate mappings.
+
+**Solution:**
+1. Check existing mappings in the data table
+2. Delete the conflicting mapping if you want to remap
+3. Use a different System ID or select a different division
+4. The constraint ensures data integrity - each CRM account maps to exactly one territory
+
+### Client List Builder shows no clients
+
+**Symptom:** "No clients found" or empty dropdown in Client List Builder
+
+**Cause:** Either no client data in `crm_data/clients.json` or no CRM mappings exist for those clients.
+
+**Solution:**
+1. Verify `crm_data/clients.json` exists and contains valid client data
+2. Check that clients have the required fields: system_id, account_name, country, custom_admin_level
+3. Ensure you've created CRM mappings in the CRM Mapping page
+4. Client List Builder only shows clients that have been mapped to divisions
 
 ## License
 
