@@ -37,9 +37,122 @@ class Database:
         # Initialize database
         self._init_database()
 
+    def _get_connection(self, row_factory: bool = False) -> sqlite3.Connection:
+        """
+        Get a database connection.
+
+        Args:
+            row_factory: If True, set row_factory to sqlite3.Row for dict-like access
+
+        Returns:
+            SQLite connection object
+        """
+        conn = sqlite3.connect(self.db_path)
+        if row_factory:
+            conn.row_factory = sqlite3.Row
+        return conn
+
+    def _execute_query(self, query: str, params: tuple = (), row_factory: bool = True, fetch_one: bool = False):
+        """
+        Execute a SELECT query and return results.
+
+        Args:
+            query: SQL query string
+            params: Query parameters tuple
+            row_factory: If True, return dict-like Row objects
+            fetch_one: If True, return single row; if False, return all rows
+
+        Returns:
+            Single row dict, list of dicts, or None
+        """
+        conn = self._get_connection(row_factory=row_factory)
+        cursor = conn.cursor()
+
+        try:
+            cursor.execute(query, params)
+            if fetch_one:
+                result = cursor.fetchone()
+                return dict(result) if result and row_factory else result
+            else:
+                rows = cursor.fetchall()
+                return [dict(row) for row in rows] if row_factory else rows
+        finally:
+            conn.close()
+
+    def _execute_write(self, query: str, params: tuple = (), return_lastrowid: bool = False):
+        """
+        Execute an INSERT, UPDATE, or DELETE query.
+
+        Args:
+            query: SQL query string
+            params: Query parameters tuple
+            return_lastrowid: If True, return the last inserted row ID
+
+        Returns:
+            lastrowid if return_lastrowid=True, rowcount if False
+
+        Raises:
+            sqlite3.IntegrityError: If constraint violation occurs
+        """
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        try:
+            cursor.execute(query, params)
+            conn.commit()
+            return cursor.lastrowid if return_lastrowid else cursor.rowcount
+        except sqlite3.IntegrityError as e:
+            conn.rollback()
+            raise e
+        finally:
+            conn.close()
+
+    def _execute_transaction(self, transaction_func):
+        """
+        Execute a complex transaction with rollback support.
+
+        Args:
+            transaction_func: Function that takes (conn, cursor) and performs DB operations
+
+        Returns:
+            The return value of transaction_func
+
+        Raises:
+            Any exception raised by transaction_func
+        """
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        try:
+            result = transaction_func(conn, cursor)
+            conn.commit()
+            return result
+        except Exception as e:
+            conn.rollback()
+            raise e
+        finally:
+            conn.close()
+
+    def _parse_geometry(self, mapping: Dict) -> Dict:
+        """
+        Parse geometry field from JSON string to dict.
+
+        Args:
+            mapping: Mapping dict with 'geometry' field
+
+        Returns:
+            Modified mapping dict with parsed geometry
+        """
+        if mapping.get('geometry'):
+            try:
+                mapping['geometry'] = json.loads(mapping['geometry'])
+            except (json.JSONDecodeError, TypeError):
+                mapping['geometry'] = None
+        return mapping
+
     def _init_database(self):
         """Initialize database schema with all tables."""
-        conn = sqlite3.connect(self.db_path)
+        conn = self._get_connection()
         cursor = conn.cursor()
 
         # Load and execute both schemas
@@ -91,36 +204,22 @@ class Database:
             country=country
         )
 
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-
         # Serialize geometry to JSON string if provided
         geometry_str = json.dumps(geometry) if geometry else None
 
-        try:
-            cursor.execute("""
-                INSERT INTO mappings
-                (system_id, account_name, custom_admin_level, division_id,
-                 division_name, overture_subtype, country, geometry)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """, (system_id, account_name, custom_admin_level, division_id,
-                  division_name, overture_subtype, country, geometry_str))
+        self._execute_write("""
+            INSERT INTO mappings
+            (system_id, account_name, custom_admin_level, division_id,
+             division_name, overture_subtype, country, geometry)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (system_id, account_name, custom_admin_level, division_id,
+              division_name, overture_subtype, country, geometry_str))
 
-            conn.commit()
-            return True
-        except sqlite3.IntegrityError as e:
-            conn.rollback()
-            raise e
-        finally:
-            conn.close()
+        return True
 
     def get_all_mappings(self) -> List[Dict]:
         """Get all CRM mappings."""
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
-
-        cursor.execute("""
+        mappings = self._execute_query("""
             SELECT id, system_id, account_name, custom_admin_level,
                    division_id, division_name, overture_subtype, country,
                    geometry, created_at, updated_at
@@ -128,131 +227,61 @@ class Database:
             ORDER BY created_at DESC
         """)
 
-        rows = cursor.fetchall()
-        conn.close()
-
         # Parse geometry from JSON string to dict
-        mappings = []
-        for row in rows:
-            mapping = dict(row)
-            if mapping['geometry']:
-                try:
-                    mapping['geometry'] = json.loads(mapping['geometry'])
-                except (json.JSONDecodeError, TypeError):
-                    mapping['geometry'] = None
-            mappings.append(mapping)
-
-        return mappings
+        return [self._parse_geometry(mapping) for mapping in mappings]
 
     def get_mapping_by_system_id(self, system_id: str) -> Optional[Dict]:
         """Get mapping by CRM system ID."""
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
-
-        cursor.execute("""
+        mapping = self._execute_query("""
             SELECT id, system_id, account_name, custom_admin_level,
                    division_id, division_name, overture_subtype, country,
                    geometry, created_at, updated_at
             FROM mappings
             WHERE system_id = ?
-        """, (system_id,))
+        """, (system_id,), fetch_one=True)
 
-        row = cursor.fetchone()
-        conn.close()
-
-        if row:
-            mapping = dict(row)
-            if mapping['geometry']:
-                try:
-                    mapping['geometry'] = json.loads(mapping['geometry'])
-                except (json.JSONDecodeError, TypeError):
-                    mapping['geometry'] = None
-            return mapping
-        return None
+        return self._parse_geometry(mapping) if mapping else None
 
     def get_mapping_by_division_id(self, division_id: str) -> Optional[Dict]:
         """Get mapping by Overture division ID."""
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
-
-        cursor.execute("""
+        mapping = self._execute_query("""
             SELECT id, system_id, account_name, custom_admin_level,
                    division_id, division_name, overture_subtype, country,
                    geometry, created_at, updated_at
             FROM mappings
             WHERE division_id = ?
-        """, (division_id,))
+        """, (division_id,), fetch_one=True)
 
-        row = cursor.fetchone()
-        conn.close()
-
-        if row:
-            mapping = dict(row)
-            if mapping['geometry']:
-                try:
-                    mapping['geometry'] = json.loads(mapping['geometry'])
-                except (json.JSONDecodeError, TypeError):
-                    mapping['geometry'] = None
-            return mapping
-        return None
+        return self._parse_geometry(mapping) if mapping else None
 
     def delete_mapping(self, mapping_id: int) -> bool:
         """Delete a mapping by ID."""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-
         try:
-            cursor.execute("DELETE FROM mappings WHERE id = ?", (mapping_id,))
-            conn.commit()
-            return cursor.rowcount > 0
+            rowcount = self._execute_write("DELETE FROM mappings WHERE id = ?", (mapping_id,))
+            return rowcount > 0
         except Exception:
-            conn.rollback()
             return False
-        finally:
-            conn.close()
 
     def delete_mapping_by_system_id(self, system_id: str) -> bool:
         """Delete a mapping by CRM system ID."""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-
         try:
-            cursor.execute("DELETE FROM mappings WHERE system_id = ?", (system_id,))
-            conn.commit()
-            return cursor.rowcount > 0
+            rowcount = self._execute_write("DELETE FROM mappings WHERE system_id = ?", (system_id,))
+            return rowcount > 0
         except Exception:
-            conn.rollback()
             return False
-        finally:
-            conn.close()
 
     def get_mapping_count(self) -> int:
         """Get total count of mappings."""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-
-        cursor.execute("SELECT COUNT(*) FROM mappings")
-        count = cursor.fetchone()[0]
-
-        conn.close()
-        return count
+        result = self._execute_query("SELECT COUNT(*) FROM mappings", row_factory=False, fetch_one=True)
+        return result[0] if result else 0
 
     def clear_all_mappings(self) -> bool:
         """Delete all mappings."""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-
         try:
-            cursor.execute("DELETE FROM mappings")
-            conn.commit()
+            self._execute_write("DELETE FROM mappings")
             return True
         except Exception:
-            conn.rollback()
             return False
-        finally:
-            conn.close()
 
     def export_mappings_to_json_format(self) -> List[Dict]:
         """Export all mappings in JSON-compatible format (without DB metadata)."""
@@ -290,16 +319,14 @@ class Database:
         Returns:
             True if successful, False otherwise
         """
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-
         try:
             # Check if metadata exists
-            cursor.execute("""
-                SELECT id FROM division_info WHERE division_id = ?
-            """, (division_id,))
-
-            existing = cursor.fetchone()
+            existing = self._execute_query(
+                "SELECT id FROM division_info WHERE division_id = ?",
+                (division_id,),
+                row_factory=False,
+                fetch_one=True
+            )
 
             if existing:
                 # Update existing metadata if new info provided
@@ -321,26 +348,22 @@ class Database:
                         update_fields.append("updated_at = CURRENT_TIMESTAMP")
                         update_values.append(division_id)
 
-                        cursor.execute(f"""
+                        self._execute_write(f"""
                             UPDATE division_info
                             SET {', '.join(update_fields)}
                             WHERE division_id = ?
-                        """, update_values)
+                        """, tuple(update_values))
             else:
                 # Insert new metadata
-                cursor.execute("""
+                self._execute_write("""
                     INSERT INTO division_info
                     (division_id, division_name, division_subtype, country)
                     VALUES (?, ?, ?, ?)
                 """, (division_id, division_name, division_subtype, country))
 
-            conn.commit()
             return True
         except Exception:
-            conn.rollback()
             return False
-        finally:
-            conn.close()
 
     def get_division_info(self, division_id: str) -> Optional[Dict]:
         """
@@ -352,18 +375,11 @@ class Database:
         Returns:
             Info dict or None if not found
         """
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
-
-        cursor.execute("""
-            SELECT * FROM division_info WHERE division_id = ?
-        """, (division_id,))
-
-        row = cursor.fetchone()
-        conn.close()
-
-        return dict(row) if row else None
+        return self._execute_query(
+            "SELECT * FROM division_info WHERE division_id = ?",
+            (division_id,),
+            fetch_one=True
+        )
 
     # ========== Relationship Methods ==========
 
@@ -406,49 +422,26 @@ class Database:
                 country=parent_metadata.get('country')
             )
 
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
+        self._execute_write("""
+            INSERT INTO relationships
+            (child_division_id, parent_division_id, relationship_type, notes)
+            VALUES (?, ?, ?, ?)
+        """, (child_division_id, parent_division_id, relationship_type, notes))
 
-        try:
-            cursor.execute("""
-                INSERT INTO relationships
-                (child_division_id, parent_division_id, relationship_type, notes)
-                VALUES (?, ?, ?, ?)
-            """, (child_division_id, parent_division_id, relationship_type, notes))
-
-            conn.commit()
-            return True
-        except sqlite3.IntegrityError as e:
-            conn.rollback()
-            raise e
-        finally:
-            conn.close()
+        return True
 
     def get_all_relationships(self) -> List[Dict]:
         """Get all organizational relationships."""
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
-
-        cursor.execute("""
+        return self._execute_query("""
             SELECT id, child_division_id, parent_division_id,
                    relationship_type, notes, created_at
             FROM relationships
             ORDER BY created_at DESC
         """)
 
-        rows = cursor.fetchall()
-        conn.close()
-
-        return [dict(row) for row in rows]
-
     def get_children(self, parent_division_id: str) -> List[Dict]:
         """Get all divisions that report to the specified parent."""
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
-
-        cursor.execute("""
+        return self._execute_query("""
             SELECT id, child_division_id, parent_division_id,
                    relationship_type, notes, created_at
             FROM relationships
@@ -456,18 +449,9 @@ class Database:
             ORDER BY created_at DESC
         """, (parent_division_id,))
 
-        rows = cursor.fetchall()
-        conn.close()
-
-        return [dict(row) for row in rows]
-
     def get_parents(self, child_division_id: str) -> List[Dict]:
         """Get all divisions that the specified child reports to."""
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
-
-        cursor.execute("""
+        return self._execute_query("""
             SELECT id, child_division_id, parent_division_id,
                    relationship_type, notes, created_at
             FROM relationships
@@ -475,51 +459,26 @@ class Database:
             ORDER BY created_at DESC
         """, (child_division_id,))
 
-        rows = cursor.fetchall()
-        conn.close()
-
-        return [dict(row) for row in rows]
-
     def delete_relationship(self, relationship_id: int) -> bool:
         """Delete a relationship by ID."""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-
         try:
-            cursor.execute("DELETE FROM relationships WHERE id = ?", (relationship_id,))
-            conn.commit()
-            return cursor.rowcount > 0
+            rowcount = self._execute_write("DELETE FROM relationships WHERE id = ?", (relationship_id,))
+            return rowcount > 0
         except Exception:
-            conn.rollback()
             return False
-        finally:
-            conn.close()
 
     def get_relationship_count(self) -> int:
         """Get total count of relationships."""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-
-        cursor.execute("SELECT COUNT(*) FROM relationships")
-        count = cursor.fetchone()[0]
-
-        conn.close()
-        return count
+        result = self._execute_query("SELECT COUNT(*) FROM relationships", row_factory=False, fetch_one=True)
+        return result[0] if result else 0
 
     def clear_all_relationships(self) -> bool:
         """Delete all relationships."""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-
         try:
-            cursor.execute("DELETE FROM relationships")
-            conn.commit()
+            self._execute_write("DELETE FROM relationships")
             return True
         except Exception:
-            conn.rollback()
             return False
-        finally:
-            conn.close()
 
     def export_relationships_to_json(self) -> List[Dict]:
         """Export all relationships in JSON-compatible format."""
@@ -635,10 +594,7 @@ class Database:
             division_ids = [item.get('division_id', '') for item in items]
             list_id = self.generate_list_id(division_ids)
 
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-
-        try:
+        def _transaction(conn, cursor):
             # Check if list exists
             cursor.execute("SELECT id FROM list WHERE list_id = ?", (list_id,))
             existing = cursor.fetchone()
@@ -671,19 +627,13 @@ class Database:
                     VALUES (?, ?, ?)
                 """, (list_db_id, metadata_id, idx))
 
-            conn.commit()
             return list_id
 
-        except Exception as e:
-            conn.rollback()
-            raise e
-        finally:
-            conn.close()
+        return self._execute_transaction(_transaction)
 
     def load_list(self, list_id: str) -> Optional[Dict]:
         """Load a list from database."""
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row
+        conn = self._get_connection(row_factory=True)
         cursor = conn.cursor()
 
         try:
@@ -766,88 +716,73 @@ class Database:
 
     def list_all_lists(self, list_type: Optional[str] = None) -> List[Dict]:
         """Get metadata for all saved lists."""
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
+        if list_type:
+            rows = self._execute_query("""
+                SELECT
+                    l.list_id,
+                    l.list_type,
+                    l.list_name,
+                    l.description,
+                    l.created_at,
+                    COUNT(i.id) as boundary_count
+                FROM list l
+                LEFT JOIN list_item i ON l.id = i.list_id
+                WHERE l.list_type = ?
+                GROUP BY l.id
+                ORDER BY l.created_at DESC
+            """, (list_type,))
+        else:
+            rows = self._execute_query("""
+                SELECT
+                    l.list_id,
+                    l.list_type,
+                    l.list_name,
+                    l.description,
+                    l.created_at,
+                    COUNT(i.id) as boundary_count
+                FROM list l
+                LEFT JOIN list_item i ON l.id = i.list_id
+                GROUP BY l.id
+                ORDER BY l.created_at DESC
+            """)
 
-        try:
-            if list_type:
-                cursor.execute("""
-                    SELECT
-                        l.list_id,
-                        l.list_type,
-                        l.list_name,
-                        l.description,
-                        l.created_at,
-                        COUNT(i.id) as boundary_count
-                    FROM list l
-                    LEFT JOIN list_item i ON l.id = i.list_id
-                    WHERE l.list_type = ?
-                    GROUP BY l.id
-                    ORDER BY l.created_at DESC
-                """, (list_type,))
-            else:
-                cursor.execute("""
-                    SELECT
-                        l.list_id,
-                        l.list_type,
-                        l.list_name,
-                        l.description,
-                        l.created_at,
-                        COUNT(i.id) as boundary_count
-                    FROM list l
-                    LEFT JOIN list_item i ON l.id = i.list_id
-                    GROUP BY l.id
-                    ORDER BY l.created_at DESC
-                """)
-
-            rows = cursor.fetchall()
-
-            return [
-                {
-                    'list_id': row['list_id'],
-                    'list_type': row['list_type'],
-                    'list_name': row['list_name'],
-                    'description': row['description'] or '',
-                    'created_at': row['created_at'],
-                    'boundary_count': row['boundary_count']
-                }
-                for row in rows
-            ]
-
-        finally:
-            conn.close()
+        return [
+            {
+                'list_id': row['list_id'],
+                'list_type': row['list_type'],
+                'list_name': row['list_name'],
+                'description': row['description'] or '',
+                'created_at': row['created_at'],
+                'boundary_count': row['boundary_count']
+            }
+            for row in rows
+        ]
 
     def delete_list(self, list_id: str) -> bool:
         """Delete a list and all its items (CASCADE)."""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-
         try:
-            cursor.execute("DELETE FROM list WHERE list_id = ?", (list_id,))
-            conn.commit()
-            return cursor.rowcount > 0
+            rowcount = self._execute_write("DELETE FROM list WHERE list_id = ?", (list_id,))
+            return rowcount > 0
         except Exception:
-            conn.rollback()
             return False
-        finally:
-            conn.close()
 
     def get_list_count(self, list_type: Optional[str] = None) -> int:
         """Get total count of lists."""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
+        if list_type:
+            result = self._execute_query(
+                "SELECT COUNT(*) FROM list WHERE list_type = ?",
+                (list_type,),
+                row_factory=False,
+                fetch_one=True
+            )
+        else:
+            result = self._execute_query(
+                "SELECT COUNT(*) FROM list",
+                row_factory=False,
+                fetch_one=True
+            )
 
-        try:
-            if list_type:
-                cursor.execute("SELECT COUNT(*) FROM list WHERE list_type = ?", (list_type,))
-            else:
-                cursor.execute("SELECT COUNT(*) FROM list")
-
-            count = cursor.fetchone()[0]
-            return count
-        finally:
-            conn.close()
+        return result[0] if result else 0
 
     def update_list_metadata(
         self,
@@ -859,86 +794,52 @@ class Database:
         if list_name is None and description is None:
             return False
 
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-
         try:
             if list_name and description is not None:
-                cursor.execute("""
+                rowcount = self._execute_write("""
                     UPDATE list
                     SET list_name = ?, description = ?, updated_at = CURRENT_TIMESTAMP
                     WHERE list_id = ?
                 """, (list_name, description, list_id))
             elif list_name:
-                cursor.execute("""
+                rowcount = self._execute_write("""
                     UPDATE list
                     SET list_name = ?, updated_at = CURRENT_TIMESTAMP
                     WHERE list_id = ?
                 """, (list_name, list_id))
             else:
-                cursor.execute("""
+                rowcount = self._execute_write("""
                     UPDATE list
                     SET description = ?, updated_at = CURRENT_TIMESTAMP
                     WHERE list_id = ?
                 """, (description, list_id))
 
-            conn.commit()
-            return cursor.rowcount > 0
+            return rowcount > 0
         except Exception:
-            conn.rollback()
             return False
-        finally:
-            conn.close()
 
     def clear_all_lists(self) -> bool:
         """Delete all lists (CASCADE deletes all list_items)."""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-
         try:
-            cursor.execute("DELETE FROM list")
-            conn.commit()
+            self._execute_write("DELETE FROM list")
             return True
         except Exception:
-            conn.rollback()
             return False
-        finally:
-            conn.close()
 
     def get_metadata_by_division_id(self, division_id: str, metadata_type: Optional[str] = None) -> List[Dict]:
         """Get all metadata entries for a division_id."""
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
+        if metadata_type:
+            rows = self._execute_query("""
+                SELECT * FROM division_metadata
+                WHERE division_id = ? AND metadata_type = ?
+                ORDER BY created_at DESC
+            """, (division_id, metadata_type))
+        else:
+            rows = self._execute_query("""
+                SELECT * FROM division_metadata
+                WHERE division_id = ?
+                ORDER BY created_at DESC
+            """, (division_id,))
 
-        try:
-            if metadata_type:
-                cursor.execute("""
-                    SELECT * FROM division_metadata
-                    WHERE division_id = ? AND metadata_type = ?
-                    ORDER BY created_at DESC
-                """, (division_id, metadata_type))
-            else:
-                cursor.execute("""
-                    SELECT * FROM division_metadata
-                    WHERE division_id = ?
-                    ORDER BY created_at DESC
-                """, (division_id,))
-
-            rows = cursor.fetchall()
-
-            results = []
-            for row in rows:
-                metadata = dict(row)
-                # Parse geometry if present
-                if metadata['geometry']:
-                    try:
-                        metadata['geometry'] = json.loads(metadata['geometry'])
-                    except (json.JSONDecodeError, TypeError):
-                        metadata['geometry'] = None
-                results.append(metadata)
-
-            return results
-
-        finally:
-            conn.close()
+        # Parse geometry if present
+        return [self._parse_geometry(metadata) for metadata in rows]
