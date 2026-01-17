@@ -224,7 +224,17 @@ def render_relationship_form(storage: CRMMappingStorage, query_engine):
                     child_division_id=child['division_id'],
                     parent_division_id=parent['division_id'],
                     relationship_type=relationship_type.strip(),
-                    notes=notes.strip() if notes.strip() else None
+                    notes=notes.strip() if notes.strip() else None,
+                    child_metadata={
+                        'division_name': child.get('name'),
+                        'division_subtype': child.get('subtype'),
+                        'country': child.get('country')
+                    },
+                    parent_metadata={
+                        'division_name': parent.get('name'),
+                        'division_subtype': parent.get('subtype'),
+                        'country': parent.get('country')
+                    }
                 )
                 st.success(f"✅ Added relationship: {child['name']} → {parent['name']} ({relationship_type})")
                 st.rerun()

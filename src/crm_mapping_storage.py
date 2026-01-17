@@ -68,6 +68,19 @@ class CRMMappingStorage:
             ON mappings(system_id)
         """)
 
+        # Create division_metadata table (shared metadata repository)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS division_metadata (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                division_id TEXT NOT NULL UNIQUE,
+                division_name TEXT,
+                division_subtype TEXT,
+                country TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
         # Create relationships table for organizational hierarchy
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS relationships (
@@ -80,6 +93,12 @@ class CRMMappingStorage:
                 UNIQUE(child_division_id, parent_division_id, relationship_type),
                 CHECK(child_division_id != parent_division_id)
             )
+        """)
+
+        # Create indexes for division_metadata
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_division_metadata_division_id
+            ON division_metadata(division_id)
         """)
 
         # Create indexes for relationships
@@ -101,6 +120,7 @@ class CRMMappingStorage:
                    country: str, geometry: Optional[Dict] = None) -> bool:
         """
         Add a new CRM mapping.
+        Automatically stores division metadata.
 
         Args:
             system_id: CRM system ID
@@ -118,6 +138,14 @@ class CRMMappingStorage:
         Raises:
             sqlite3.IntegrityError: If system_id or division_id already exists
         """
+        # Ensure division metadata exists
+        self.ensure_division_metadata(
+            division_id,
+            division_name=division_name,
+            division_subtype=overture_subtype,
+            country=country
+        )
+
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
 
@@ -352,18 +380,116 @@ class CRMMappingStorage:
             for m in mappings
         ]
 
+    # Division metadata management methods
+
+    def ensure_division_metadata(self, division_id: str, division_name: Optional[str] = None,
+                                 division_subtype: Optional[str] = None,
+                                 country: Optional[str] = None) -> bool:
+        """
+        Ensure division metadata exists in the database. If it doesn't exist, create it.
+        If it exists, optionally update it with new information.
+
+        Args:
+            division_id: Overture division ID
+            division_name: Name of the division (optional)
+            division_subtype: Subtype of the division (optional)
+            country: Country code (optional)
+
+        Returns:
+            True if successful, False otherwise
+        """
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        try:
+            # Check if metadata exists
+            cursor.execute("""
+                SELECT id FROM division_metadata WHERE division_id = ?
+            """, (division_id,))
+
+            existing = cursor.fetchone()
+
+            if existing:
+                # Update existing metadata if new info provided
+                if division_name or division_subtype or country:
+                    update_fields = []
+                    update_values = []
+
+                    if division_name:
+                        update_fields.append("division_name = ?")
+                        update_values.append(division_name)
+                    if division_subtype:
+                        update_fields.append("division_subtype = ?")
+                        update_values.append(division_subtype)
+                    if country:
+                        update_fields.append("country = ?")
+                        update_values.append(country)
+
+                    if update_fields:
+                        update_fields.append("updated_at = CURRENT_TIMESTAMP")
+                        update_values.append(division_id)
+
+                        cursor.execute(f"""
+                            UPDATE division_metadata
+                            SET {', '.join(update_fields)}
+                            WHERE division_id = ?
+                        """, update_values)
+            else:
+                # Insert new metadata
+                cursor.execute("""
+                    INSERT INTO division_metadata
+                    (division_id, division_name, division_subtype, country)
+                    VALUES (?, ?, ?, ?)
+                """, (division_id, division_name, division_subtype, country))
+
+            conn.commit()
+            return True
+        except Exception:
+            conn.rollback()
+            return False
+        finally:
+            conn.close()
+
+    def get_division_metadata(self, division_id: str) -> Optional[Dict]:
+        """
+        Get division metadata by division ID.
+
+        Args:
+            division_id: Overture division ID
+
+        Returns:
+            Metadata dict or None if not found
+        """
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT * FROM division_metadata WHERE division_id = ?
+        """, (division_id,))
+
+        row = cursor.fetchone()
+        conn.close()
+
+        return dict(row) if row else None
+
     # Relationship management methods
 
     def add_relationship(self, child_division_id: str, parent_division_id: str,
-                        relationship_type: str = 'reports_to', notes: Optional[str] = None) -> bool:
+                        relationship_type: str = 'reports_to', notes: Optional[str] = None,
+                        child_metadata: Optional[Dict] = None,
+                        parent_metadata: Optional[Dict] = None) -> bool:
         """
         Add a new organizational relationship between divisions.
+        Automatically stores division metadata if provided.
 
         Args:
             child_division_id: Overture division ID of the subordinate
             parent_division_id: Overture division ID of the supervisor
             relationship_type: Type of relationship (e.g., 'reports_to', 'coordinates_with')
             notes: Optional notes about this relationship
+            child_metadata: Optional dict with keys: division_name, division_subtype, country
+            parent_metadata: Optional dict with keys: division_name, division_subtype, country
 
         Returns:
             True if successful, False otherwise
@@ -371,6 +497,23 @@ class CRMMappingStorage:
         Raises:
             sqlite3.IntegrityError: If relationship already exists or self-reference
         """
+        # Ensure division metadata exists if provided
+        if child_metadata:
+            self.ensure_division_metadata(
+                child_division_id,
+                division_name=child_metadata.get('division_name') or child_metadata.get('name'),
+                division_subtype=child_metadata.get('division_subtype') or child_metadata.get('subtype'),
+                country=child_metadata.get('country')
+            )
+
+        if parent_metadata:
+            self.ensure_division_metadata(
+                parent_division_id,
+                division_name=parent_metadata.get('division_name') or parent_metadata.get('name'),
+                division_subtype=parent_metadata.get('division_subtype') or parent_metadata.get('subtype'),
+                country=parent_metadata.get('country')
+            )
+
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
 
