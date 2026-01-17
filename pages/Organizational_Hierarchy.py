@@ -191,13 +191,7 @@ def render_relationship_form(storage: CRMMappingStorage, query_engine):
         "Relationship Type",
         options=[
             "reports_to",
-            "coordinates_with",
-            "oversees",
-            "managed_by",
             "collaborates_with",
-            "delegates_to",
-            "advises",
-            "custom"
         ],
         key="relationship_type",
         help="Select the type of organizational relationship"
