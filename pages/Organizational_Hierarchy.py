@@ -9,12 +9,9 @@ import pandas as pd
 import json
 import os
 import sqlite3
-from typing import Optional
 
-from src.query_engine import create_query_engine
 from src.crm_mapping_storage import CRMMappingStorage
-from src.components import create_map
-from streamlit_folium import st_folium
+from src.query_engine import create_query_engine
 
 page_title = "Organizational Hierarchy"
 page_emoji = "🏗️"
