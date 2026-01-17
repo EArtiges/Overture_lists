@@ -9,8 +9,8 @@ import pandas as pd
 import json
 from typing import Optional, Dict
 
-from src.crm_mapping_storage import CRMMappingStorage
 from src.list_storage import ListStorage
+from src.crm_mapping_storage import CRMMappingStorage
 from src.components import render_crm_client_selector, create_map
 from streamlit_folium import st_folium
 
