@@ -74,17 +74,11 @@ def render_division_selector(query_engine, prefix: str, label: str):
         for country in countries
     ]
 
-    # Callback to reset selections when country changes
-    def on_country_change():
-        st.session_state[selections_key] = []
-        st.session_state[f'{prefix}_boundary'] = None
-
     selected_country_idx = st.selectbox(
         "Level 1: Select Country",
         options=range(len(country_options)),
         format_func=lambda x: country_options[x] if country_options[x] else "Select...",
         key=f"{prefix}_country_select",
-        on_change=on_country_change
     )
 
     if selected_country_idx == 0:
@@ -94,8 +88,19 @@ def render_division_selector(query_engine, prefix: str, label: str):
     # Get selected country division
     country_division = countries[selected_country_idx - 1]
 
-    # Add country to selections if not already there
-    if not st.session_state[selections_key] or st.session_state[selections_key][0]['division_id'] != country_division['division_id']:
+    # Only reset selections if country actually changed (not on every rerun)
+    # Track last selected country division ID to detect changes
+    last_country_key = f'{prefix}_last_country_id'
+    if last_country_key not in st.session_state:
+        st.session_state[last_country_key] = None
+
+    if st.session_state[last_country_key] != country_division['division_id']:
+        # Country changed - reset selections
+        st.session_state[last_country_key] = country_division['division_id']
+        st.session_state[selections_key] = [country_division]
+        st.session_state[f'{prefix}_boundary'] = None
+    elif not st.session_state[selections_key]:
+        # Selections is empty but country hasn't changed - initialize with country
         st.session_state[selections_key] = [country_division]
 
     # Cascading division dropdowns
