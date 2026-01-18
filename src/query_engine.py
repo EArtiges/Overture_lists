@@ -172,10 +172,10 @@ class OvertureQueryEngine:
                     d.subtype,
                     d.country,
                     d.parent_division_id,
-                    desc.depth + 1 as depth
+                    parent_desc.depth + 1 as depth
                 FROM read_parquet('{_self.parquet_path}') d
-                INNER JOIN descendants desc ON d.parent_division_id = desc.division_id
-                WHERE desc.depth < {depth_limit}
+                INNER JOIN descendants parent_desc ON d.parent_division_id = parent_desc.division_id
+                WHERE parent_desc.depth < {depth_limit}
             )
             SELECT DISTINCT
                 division_id, name, subtype, country, parent_division_id, depth
