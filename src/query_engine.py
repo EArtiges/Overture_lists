@@ -134,6 +134,64 @@ class OvertureQueryEngine:
             return pd.DataFrame(columns=['division_id', 'name', 'subtype', 'country', 'parent_division_id'])
 
     @st.cache_data(ttl=3600)
+    def get_descendants(_self, parent_division_id: str, max_depth: int = None) -> pd.DataFrame:
+        """
+        Get all descendant divisions up to max_depth levels deep using recursive query.
+
+        Args:
+            parent_division_id: Parent division ID
+            max_depth: Maximum depth to traverse (None for unlimited, going all the way down)
+
+        Returns:
+            DataFrame with columns: division_id, name, subtype, country, parent_division_id, depth
+        """
+        conn = _self._get_connection()
+
+        # Set depth limit (use large number for unlimited)
+        depth_limit = 999 if max_depth is None else max_depth
+
+        query = f"""
+            WITH RECURSIVE descendants AS (
+                -- Base case: direct children (depth 1)
+                SELECT
+                    id as division_id,
+                    names.primary as name,
+                    subtype,
+                    country,
+                    parent_division_id,
+                    1 as depth
+                FROM read_parquet('{_self.parquet_path}')
+                WHERE parent_division_id = ?
+
+                UNION ALL
+
+                -- Recursive case: children of children
+                SELECT
+                    d.id as division_id,
+                    d.names.primary as name,
+                    d.subtype,
+                    d.country,
+                    d.parent_division_id,
+                    parent_desc.depth + 1 as depth
+                FROM read_parquet('{_self.parquet_path}') d
+                INNER JOIN descendants parent_desc ON d.parent_division_id = parent_desc.division_id
+                WHERE parent_desc.depth < {depth_limit}
+            )
+            SELECT DISTINCT
+                division_id, name, subtype, country, parent_division_id, depth
+            FROM descendants
+            ORDER BY depth, name
+            LIMIT 10000
+        """
+
+        try:
+            result = conn.execute(query, [parent_division_id]).fetchdf()
+            return result
+        except Exception as e:
+            st.error(f"Error fetching descendant divisions: {e}")
+            return pd.DataFrame(columns=['division_id', 'name', 'subtype', 'country', 'parent_division_id', 'depth'])
+
+    @st.cache_data(ttl=3600)
     def get_geometry(_self, division_id: str) -> Optional[Dict[str, Any]]:
         """
         Get geometry for a specific division from division_area dataset.

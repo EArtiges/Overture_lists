@@ -74,21 +74,18 @@ def render_division_selector(query_engine, prefix: str, label: str):
         for country in countries
     ]
 
+    # Callback to reset selections only when country actually changes
+    def on_country_change():
+        st.session_state[selections_key] = []
+        st.session_state[f'{prefix}_boundary'] = None
+
     selected_country_idx = st.selectbox(
         "Level 1: Select Country",
         options=range(len(country_options)),
         format_func=lambda x: country_options[x] if country_options[x] else "Select...",
-        key=f"{prefix}_country_select"
+        key=f"{prefix}_country_select",
+        on_change=on_country_change
     )
-
-    # Reset if country changes
-    prev_country_key = f'{prefix}_previous_country_idx'
-    if prev_country_key not in st.session_state:
-        st.session_state[prev_country_key] = None
-    if selected_country_idx != st.session_state[prev_country_key]:
-        st.session_state[prev_country_key] = selected_country_idx
-        st.session_state[selections_key] = []
-        st.session_state[f'{prefix}_boundary'] = None
 
     if selected_country_idx == 0:
         st.info("Select a country to begin")

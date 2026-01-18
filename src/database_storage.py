@@ -426,6 +426,50 @@ class DatabaseStorage:
         """Get all relationships."""
         return self._execute("SELECT * FROM relationships", fetch_all=True)
 
+    def get_organizational_descendants(
+        self, division_id: int, relationship_type: str = 'reports_to', max_depth: int = None
+    ) -> List[int]:
+        """
+        Get all descendant division IDs in organizational hierarchy.
+
+        Args:
+            division_id: Parent division database ID
+            relationship_type: Type of relationship to follow (default: 'reports_to')
+            max_depth: Maximum depth to traverse (None for unlimited)
+
+        Returns:
+            List of descendant division database IDs
+        """
+        # Set depth limit (use large number for unlimited)
+        depth_limit = 999 if max_depth is None else max_depth
+
+        query = f"""
+            WITH RECURSIVE org_descendants AS (
+                -- Base case: direct children (depth 1)
+                SELECT
+                    child_division_id as division_id,
+                    1 as depth
+                FROM relationships
+                WHERE parent_division_id = ?
+                AND relationship_type = ?
+
+                UNION ALL
+
+                -- Recursive case: children of children
+                SELECT
+                    r.child_division_id,
+                    od.depth + 1
+                FROM relationships r
+                INNER JOIN org_descendants od ON r.parent_division_id = od.division_id
+                WHERE r.relationship_type = ?
+                AND od.depth < {depth_limit}
+            )
+            SELECT DISTINCT division_id FROM org_descendants
+        """
+
+        results = self._execute(query, (division_id, relationship_type, relationship_type), fetch_all=True)
+        return [r['division_id'] for r in results]
+
     def delete_relationship(
         self, parent_division_id: int, child_division_id: int, relationship_type: str
     ) -> None:

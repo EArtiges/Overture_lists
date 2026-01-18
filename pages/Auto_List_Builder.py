@@ -184,14 +184,41 @@ def render_list_generation_section(query_engine, ):
 
     st.write("---")
 
+    # Depth selection
+    st.write("**Hierarchy Depth**")
+    depth_option = st.radio(
+        "How many levels deep to traverse:",
+        options=["Direct children only", "All the way down", "Custom depth"],
+        help="Direct children: 1 level only. All the way down: unlimited recursive traversal. Custom: specify exact depth."
+    )
+
+    max_depth = None  # Default: unlimited
+    if depth_option == "Direct children only":
+        max_depth = 1
+    elif depth_option == "Custom depth":
+        max_depth = st.number_input(
+            "Maximum depth levels",
+            min_value=1,
+            max_value=20,
+            value=2,
+            help="How many levels deep to traverse (1 = direct children, 2 = children and grandchildren, etc.)"
+        )
+
+    st.write("---")
+
     col1, col2 = st.columns(2)
 
     with col1:
         if st.button("🚀 Generate List", type="primary", use_container_width=True):
             with st.spinner("Generating list..."):
                 if hierarchy_type == "Spatial Hierarchy":
-                    # Query Overture for spatial children
-                    children_df = query_engine.get_child_divisions(parent['division_id'])
+                    # Query Overture for spatial descendants
+                    if max_depth == 1:
+                        # Use simple query for direct children
+                        children_df = query_engine.get_child_divisions(parent['division_id'])
+                    else:
+                        # Use recursive query for multiple levels
+                        children_df = query_engine.get_descendants(parent['division_id'], max_depth=max_depth)
 
                     if children_df.empty:
                         st.warning(f"No spatial children found for {parent['name']}")
@@ -207,8 +234,9 @@ def render_list_generation_section(query_engine, ):
                             'country': row['country']
                         })
 
+                    depth_msg = "direct children" if max_depth == 1 else f"descendants (depth: {max_depth if max_depth else 'unlimited'})"
                     st.session_state.generated_list = boundaries
-                    st.success(f"✅ Generated list with {len(boundaries)} divisions from spatial hierarchy")
+                    st.success(f"✅ Generated list with {len(boundaries)} divisions ({depth_msg}) from spatial hierarchy")
                     st.rerun()
 
                 else:  # Admin Hierarchy
@@ -221,26 +249,23 @@ def render_list_generation_section(query_engine, ):
                             st.info("Add relationships for this division in Organizational Hierarchy first")
                             return
 
-                        # Get all relationships for this division
-                        all_relationships = db.get_relationships(division_id=parent_div['id'])
+                        # Get descendants using recursive query
+                        descendant_ids = db.get_organizational_descendants(
+                            parent_div['id'],
+                            relationship_type='reports_to',
+                            max_depth=max_depth
+                        )
 
-                        # Filter for reports_to relationships where this is the parent
-                        reports_to_rels = [
-                            r for r in all_relationships
-                            if r['relationship_type'] == 'reports_to'
-                            and r['parent_division_id'] == parent_div['id']
-                        ]
-
-                        if not reports_to_rels:
+                        if not descendant_ids:
                             st.warning(f"No admin hierarchy relationships (reports_to) found for {parent['name']}")
                             st.info("Define relationships in the Organizational Hierarchy page first")
                             return
 
-                        # Fetch division details from Overture for each child
+                        # Fetch division details from Overture for each descendant
                         boundaries = []
-                        for rel in reports_to_rels:
+                        for child_id in descendant_ids:
                             # Get child division from cache to get its system_id
-                            child_cached = db.get_division(rel['child_division_id'])
+                            child_cached = db.get_division(child_id)
                             if child_cached:
                                 # Query Overture for full details
                                 child_div = query_engine.get_division_by_id(child_cached['system_id'])
@@ -252,8 +277,9 @@ def render_list_generation_section(query_engine, ):
                                         'country': child_div['country']
                                     })
 
+                        depth_msg = "direct children" if max_depth == 1 else f"descendants (depth: {max_depth if max_depth else 'unlimited'})"
                         st.session_state.generated_list = boundaries
-                    st.success(f"✅ Generated list with {len(boundaries)} divisions from admin hierarchy")
+                    st.success(f"✅ Generated list with {len(boundaries)} divisions ({depth_msg}) from admin hierarchy")
                     st.rerun()
 
     with col2:
