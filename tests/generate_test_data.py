@@ -16,129 +16,139 @@ def generate_test_parquet(output_path: str = "./tests/test_boundaries.parquet"):
     """
     conn = duckdb.connect(':memory:')
 
+    # Load spatial extension for geometry support
+    try:
+        conn.execute("INSTALL spatial;")
+        conn.execute("LOAD spatial;")
+    except Exception:
+        pass  # May already be installed
+
     # Create sample data matching Overture schema
     sample_data = [
         # United States boundaries
         {
-            'id': 'us_country',
+            'id': '0858d7df-4c21-6d95-ffff-aadc92e00b0a',  # Match test fixture
             'names': {'primary': 'United States'},
-            'admin_level': 2,
+            'subtype': 'country',
             'country': 'US',
+            'parent_division_id': None,
             'geometry': 'POLYGON((-125 25, -125 49, -66 49, -66 25, -125 25))'
         },
         {
-            'id': 'us_ca_state',
+            'id': '0858d7e2-aa18-ae63-ffff-e4dc0fb91919',  # Match test fixture
             'names': {'primary': 'California'},
-            'admin_level': 4,
+            'subtype': 'region',
             'country': 'US',
-            'parent_id': 'us_country',
+            'parent_division_id': '0858d7df-4c21-6d95-ffff-aadc92e00b0a',
             'geometry': 'POLYGON((-124.4 32.5, -124.4 42, -114.1 42, -114.1 32.5, -124.4 32.5))'
+        },
+        {
+            'id': '0858d7e4-1234-5678-ffff-abcd12345678',  # Match test fixture
+            'names': {'primary': 'Los Angeles County'},
+            'subtype': 'county',
+            'country': 'US',
+            'parent_division_id': '0858d7e2-aa18-ae63-ffff-e4dc0fb91919',
+            'geometry': 'POLYGON((-118.668 33.704, -118.155 33.704, -118.155 34.337, -118.668 34.337, -118.668 33.704))'
         },
         {
             'id': 'us_or_state',
             'names': {'primary': 'Oregon'},
-            'admin_level': 4,
+            'subtype': 'region',
             'country': 'US',
-            'parent_id': 'us_country',
+            'parent_division_id': '0858d7df-4c21-6d95-ffff-aadc92e00b0a',
             'geometry': 'POLYGON((-124.5 42, -124.5 46.2, -116.5 46.2, -116.5 42, -124.5 42))'
         },
         {
             'id': 'us_wa_state',
             'names': {'primary': 'Washington'},
-            'admin_level': 4,
+            'subtype': 'region',
             'country': 'US',
-            'parent_id': 'us_country',
+            'parent_division_id': '0858d7df-4c21-6d95-ffff-aadc92e00b0a',
             'geometry': 'POLYGON((-124.8 45.5, -124.8 49, -116.9 49, -116.9 45.5, -124.8 45.5))'
-        },
-        {
-            'id': 'us_ca_la_county',
-            'names': {'primary': 'Los Angeles County'},
-            'admin_level': 6,
-            'country': 'US',
-            'parent_id': 'us_ca_state',
-            'geometry': 'POLYGON((-118.9 33.7, -118.9 34.8, -117.6 34.8, -117.6 33.7, -118.9 33.7))'
         },
         {
             'id': 'us_ca_sf_county',
             'names': {'primary': 'San Francisco County'},
-            'admin_level': 6,
+            'subtype': 'county',
             'country': 'US',
-            'parent_id': 'us_ca_state',
+            'parent_division_id': '0858d7e2-aa18-ae63-ffff-e4dc0fb91919',
             'geometry': 'POLYGON((-122.5 37.7, -122.5 37.8, -122.3 37.8, -122.3 37.7, -122.5 37.7))'
         },
         # United Kingdom boundaries
         {
-            'id': 'gb_country',
+            'id': '0858d7df-5c32-7ea6-ffff-bbdc93f01c1b',  # Match test fixture
             'names': {'primary': 'United Kingdom'},
-            'admin_level': 2,
+            'subtype': 'country',
             'country': 'GB',
+            'parent_division_id': None,
             'geometry': 'POLYGON((-8 50, -8 60, 2 60, 2 50, -8 50))'
         },
         {
             'id': 'gb_eng_region',
             'names': {'primary': 'England'},
-            'admin_level': 4,
+            'subtype': 'region',
             'country': 'GB',
-            'parent_id': 'gb_country',
+            'parent_division_id': '0858d7df-5c32-7ea6-ffff-bbdc93f01c1b',
             'geometry': 'POLYGON((-6 50, -6 55, 2 55, 2 50, -6 50))'
         },
         {
             'id': 'gb_sct_region',
             'names': {'primary': 'Scotland'},
-            'admin_level': 4,
+            'subtype': 'region',
             'country': 'GB',
-            'parent_id': 'gb_country',
+            'parent_division_id': '0858d7df-5c32-7ea6-ffff-bbdc93f01c1b',
             'geometry': 'POLYGON((-7 55, -7 59, 0 59, 0 55, -7 55))'
         },
         # Canada boundaries
         {
             'id': 'ca_country',
             'names': {'primary': 'Canada'},
-            'admin_level': 2,
+            'subtype': 'country',
             'country': 'CA',
+            'parent_division_id': None,
             'geometry': 'POLYGON((-141 42, -141 70, -52 70, -52 42, -141 42))'
         },
         {
             'id': 'ca_on_province',
             'names': {'primary': 'Ontario'},
-            'admin_level': 4,
+            'subtype': 'region',
             'country': 'CA',
-            'parent_id': 'ca_country',
+            'parent_division_id': 'ca_country',
             'geometry': 'POLYGON((-95 42, -95 57, -74 57, -74 42, -95 42))'
         },
         {
             'id': 'ca_bc_province',
             'names': {'primary': 'British Columbia'},
-            'admin_level': 4,
+            'subtype': 'region',
             'country': 'CA',
-            'parent_id': 'ca_country',
+            'parent_division_id': 'ca_country',
             'geometry': 'POLYGON((-139 48, -139 60, -114 60, -114 48, -139 48))'
         },
     ]
 
-    # Create table with proper structure
+    # Create table with proper structure (quote reserved keyword 'primary')
     conn.execute("""
         CREATE TABLE boundaries (
             id VARCHAR,
-            names STRUCT(primary VARCHAR),
-            admin_level INTEGER,
+            names STRUCT("primary" VARCHAR),
+            subtype VARCHAR,
             country VARCHAR,
-            parent_id VARCHAR,
+            parent_division_id VARCHAR,
             geometry GEOMETRY
         )
     """)
 
     # Insert data
     for row in sample_data:
-        parent_id = row.get('parent_id', None)
+        parent_division_id = row.get('parent_division_id', None)
         conn.execute("""
             INSERT INTO boundaries VALUES (?, ?, ?, ?, ?, ST_GeomFromText(?))
         """, [
             row['id'],
             row['names'],
-            row['admin_level'],
+            row['subtype'],
             row['country'],
-            parent_id,
+            parent_division_id,
             row['geometry']
         ])
 
@@ -148,7 +158,8 @@ def generate_test_parquet(output_path: str = "./tests/test_boundaries.parquet"):
     print(f"✓ Test data generated: {output_path}")
     print(f"  - {len(sample_data)} boundaries")
     print(f"  - Countries: US, GB, CA")
-    print(f"  - Admin levels: 2 (country), 4 (state/province), 6 (county)")
+    print(f"  - Subtypes: country, region, county")
+    print(f"  - Includes IDs matching test fixtures")
 
     conn.close()
 
