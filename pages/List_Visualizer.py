@@ -71,13 +71,15 @@ def discover_all_lists() -> List[Dict]:
     try:
         with DatabaseStorage() as db:
             boundary_lists = db.get_all_lists(list_type='division')
-        for lst in boundary_lists:
-            lst['list_id'] = lst['id']  # Add for compatibility
-            lst['list_name'] = lst['name']  # Add for compatibility
-            lst['description'] = lst.get('notes', '')  # Add for compatibility
-            lst['source_dir'] = 'division'
-            lst['source_label'] = 'Boundary Lists'
-            all_lists.append(lst)
+            for lst in boundary_lists:
+                items = db.get_list_items(lst['id'])
+                lst['list_id'] = lst['id']  # Add for compatibility
+                lst['list_name'] = lst['name']  # Add for compatibility
+                lst['description'] = lst.get('notes', '')  # Add for compatibility
+                lst['boundary_count'] = len(items)  # Add item count
+                lst['source_dir'] = 'division'
+                lst['source_label'] = 'Boundary Lists'
+                all_lists.append(lst)
     except Exception as e:
         st.error(f"Error loading boundary lists: {e}")
 
@@ -85,13 +87,15 @@ def discover_all_lists() -> List[Dict]:
     try:
         with DatabaseStorage() as db:
             client_lists = db.get_all_lists(list_type='client')
-        for lst in client_lists:
-            lst['list_id'] = lst['id']  # Add for compatibility
-            lst['list_name'] = lst['name']  # Add for compatibility
-            lst['description'] = lst.get('notes', '')  # Add for compatibility
-            lst['source_dir'] = 'client'
-            lst['source_label'] = 'CRM Client Lists'
-            all_lists.append(lst)
+            for lst in client_lists:
+                items = db.get_list_items(lst['id'])
+                lst['list_id'] = lst['id']  # Add for compatibility
+                lst['list_name'] = lst['name']  # Add for compatibility
+                lst['description'] = lst.get('notes', '')  # Add for compatibility
+                lst['boundary_count'] = len(items)  # Add item count
+                lst['source_dir'] = 'client'
+                lst['source_label'] = 'CRM Client Lists'
+                all_lists.append(lst)
     except Exception as e:
         st.error(f"Error loading CRM client lists: {e}")
 
