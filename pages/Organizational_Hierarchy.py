@@ -74,7 +74,7 @@ def render_division_selector(query_engine, prefix: str, label: str):
         for country in countries
     ]
 
-    # Callback to reset selections only when country actually changes
+    # Callback to reset selections when country changes
     def on_country_change():
         st.session_state[selections_key] = []
         st.session_state[f'{prefix}_boundary'] = None
