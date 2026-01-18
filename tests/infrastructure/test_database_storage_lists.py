@@ -128,8 +128,8 @@ class TestDatabaseStorageLists:
             item_ids=["CRM-001"]
         )
 
-        division_lists = populated_test_db.get_lists_by_type("division")
-        client_lists = populated_test_db.get_lists_by_type("client")
+        division_lists = populated_test_db.get_all_lists(list_type="division")
+        client_lists = populated_test_db.get_all_lists(list_type="client")
 
         assert len(division_lists) == 1
         assert len(client_lists) == 1
