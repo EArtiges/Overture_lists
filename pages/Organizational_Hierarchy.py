@@ -62,43 +62,54 @@ def render_division_selector(query_engine, prefix: str, label: str):
     if selections_key not in st.session_state:
         st.session_state[selections_key] = []
 
-    # Step 1: Country selection
+    # Level 1: Country selection (now treated as first division level)
     countries = query_engine.get_countries()
     if not countries:
         st.warning("No countries found. Please check your Parquet data path.")
         return None
 
-    selected_country = st.selectbox(
-        "Select Country",
-        options=[""] + countries,
+    # Create country dropdown options
+    country_options = [""] + [
+        f"{country['name']} ({country['country']})"
+        for country in countries
+    ]
+
+    selected_country_idx = st.selectbox(
+        "Level 1: Select Country",
+        options=range(len(country_options)),
+        format_func=lambda x: country_options[x] if country_options[x] else "Select...",
         key=f"{prefix}_country_select"
     )
 
     # Reset if country changes
-    prev_country_key = f'{prefix}_previous_country'
+    prev_country_key = f'{prefix}_previous_country_idx'
     if prev_country_key not in st.session_state:
         st.session_state[prev_country_key] = None
-    if selected_country != st.session_state[prev_country_key]:
-        st.session_state[prev_country_key] = selected_country
+    if selected_country_idx != st.session_state[prev_country_key]:
+        st.session_state[prev_country_key] = selected_country_idx
         st.session_state[selections_key] = []
         st.session_state[f'{prefix}_boundary'] = None
 
-    if not selected_country:
+    if selected_country_idx == 0:
         st.info("Select a country to begin")
         return None
 
-    # Get the country division_id
-    country_division = query_engine.get_country_division(selected_country)
-    if not country_division:
-        st.error(f"Could not find country division for {selected_country}")
-        return None
+    # Get selected country division
+    country_division = countries[selected_country_idx - 1]
 
-    # Step 2: Cascading division dropdowns
-    current_parent_id = country_division['division_id']
+    # Add country to selections if not already there
+    if not st.session_state[selections_key] or st.session_state[selections_key][0]['division_id'] != country_division['division_id']:
+        st.session_state[selections_key] = [country_division]
+
+    # Cascading division dropdowns
     level = 0
+    current_parent_id = country_division['division_id']
 
     while True:
         # Query children of current parent
+        if level > 0:
+            current_parent_id = st.session_state[selections_key][level]['division_id']
+
         divisions_df = query_engine.get_child_divisions(current_parent_id)
 
         # If no divisions at this level, stop creating dropdowns
@@ -120,30 +131,29 @@ def render_division_selector(query_engine, prefix: str, label: str):
 
         # If nothing selected at this level, stop
         if selected_idx == 0:
-            # Truncate selections beyond this level
-            st.session_state[selections_key] = st.session_state[selections_key][:level]
+            # Truncate selections beyond this level (but keep country)
+            st.session_state[selections_key] = st.session_state[selections_key][:level + 1]
             break
 
         # Get selected division
         selected_division = divisions_df.iloc[selected_idx - 1].to_dict()
 
         # Update selections list
-        if level < len(st.session_state[selections_key]):
+        if level + 1 < len(st.session_state[selections_key]):
             # User changed selection at this level - truncate
-            st.session_state[selections_key] = st.session_state[selections_key][:level]
+            st.session_state[selections_key] = st.session_state[selections_key][:level + 1]
 
-        if level == len(st.session_state[selections_key]):
+        if level + 1 == len(st.session_state[selections_key]):
             # New selection at this level
             st.session_state[selections_key].append(selected_division)
 
         # Move to next level
-        current_parent_id = selected_division['division_id']
         level += 1
 
     # Show breadcrumb
     if st.session_state[selections_key]:
         st.write("---")
-        breadcrumb = selected_country + " → " + " → ".join([
+        breadcrumb = " → ".join([
             f"{div['name']} ({div['subtype']})"
             for div in st.session_state[selections_key]
         ])

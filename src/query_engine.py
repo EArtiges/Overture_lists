@@ -45,23 +45,27 @@ class OvertureQueryEngine:
         return self.conn
 
     @st.cache_data(ttl=3600)
-    def get_countries(_self) -> List[str]:
+    def get_countries(_self) -> List[Dict]:
         """
-        Get distinct list of countries from the dataset.
+        Get list of country divisions from the dataset.
 
         Returns:
-            Sorted list of country codes
+            List of dicts with country division info (division_id, name, subtype, country)
         """
         conn = _self._get_connection()
         query = f"""
-            SELECT DISTINCT country
+            SELECT DISTINCT
+                id as division_id,
+                names.primary as name,
+                subtype,
+                country
             FROM read_parquet('{_self.parquet_path}')
-            WHERE country IS NOT NULL
+            WHERE subtype = 'country'
             ORDER BY country
         """
         try:
-            result = conn.execute(query).fetchall()
-            return [row[0] for row in result]
+            result = conn.execute(query).fetchdf()
+            return result.to_dict('records')
         except Exception as e:
             st.error(f"Error fetching countries: {e}")
             return []
