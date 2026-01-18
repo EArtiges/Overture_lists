@@ -69,10 +69,13 @@ def discover_all_lists() -> List[Dict]:
 
     # Boundary lists
     try:
-        list_storage = DatabaseStorage()
-        boundary_lists = list_storage.list_all_lists()
+        with DatabaseStorage() as db:
+            boundary_lists = db.get_all_lists(list_type='division')
         for lst in boundary_lists:
-            lst['source_dir'] = './list_data'
+            lst['list_id'] = lst['id']  # Add for compatibility
+            lst['list_name'] = lst['name']  # Add for compatibility
+            lst['description'] = lst.get('notes', '')  # Add for compatibility
+            lst['source_dir'] = 'division'
             lst['source_label'] = 'Boundary Lists'
             all_lists.append(lst)
     except Exception as e:
@@ -80,10 +83,13 @@ def discover_all_lists() -> List[Dict]:
 
     # CRM client lists
     try:
-        client_storage = ListStorage(data_dir="./crm_client_lists")
-        client_lists = client_storage.list_all_lists()
+        with DatabaseStorage() as db:
+            client_lists = db.get_all_lists(list_type='client')
         for lst in client_lists:
-            lst['source_dir'] = './crm_client_lists'
+            lst['list_id'] = lst['id']  # Add for compatibility
+            lst['list_name'] = lst['name']  # Add for compatibility
+            lst['description'] = lst.get('notes', '')  # Add for compatibility
+            lst['source_dir'] = 'client'
             lst['source_label'] = 'CRM Client Lists'
             all_lists.append(lst)
     except Exception as e:
@@ -251,8 +257,38 @@ def render_list_selector_sidebar():
             st.session_state.selected_list_source != selected_list['source_dir']):
 
             # Load the list
-            storage = ListStorage(data_dir=selected_list['source_dir'])
-            loaded_list = storage.load_list(selected_list['list_id'])
+            with DatabaseStorage() as db:
+                items = db.get_list_items(selected_list['list_id'])
+
+                # Format the loaded data based on list type
+                if selected_list['source_dir'] == 'division':
+                    # Division list - convert divisions to boundary format
+                    boundaries = []
+                    for div in items:
+                        boundaries.append({
+                            'division_id': div['system_id'],
+                            'name': div['name'],
+                            'subtype': div.get('subtype', ''),
+                            'country': div.get('country', ''),
+                            'geometry': div.get('geometry', {})
+                        })
+                    loaded_list = {
+                        'list_name': selected_list['list_name'],
+                        'description': selected_list.get('description', ''),
+                        'boundaries': boundaries
+                    }
+                else:
+                    # Client list - get client data from mappings
+                    clients = []
+                    for system_id in items:
+                        mapping = db.get_mapping_by_system_id(system_id)
+                        if mapping:
+                            clients.append(mapping)
+                    loaded_list = {
+                        'list_name': selected_list['list_name'],
+                        'description': selected_list.get('description', ''),
+                        'boundaries': clients  # Using 'boundaries' key for compatibility
+                    }
 
             if loaded_list:
                 st.session_state.selected_list_id = selected_list['list_id']
