@@ -10,9 +10,8 @@ import os
 import json
 
 from src.query_engine import create_query_engine
-from src.crm_mapping_storage import CRMMappingStorage
+from src.database_storage import DatabaseStorage
 from src.components import render_boundary_selector, render_map_section
-import sqlite3
 
 page_title = "CRM Account Mapping"
 page_emoji = "🏢"
@@ -41,7 +40,7 @@ def init_session_state():
         st.session_state.division_selections = []
 
 
-def render_mapping_form(storage: CRMMappingStorage):
+def render_mapping_form():
     """Render the form to add CRM account mappings."""
     st.subheader("🏢 Map to CRM Account")
 
@@ -54,15 +53,19 @@ def render_mapping_form(storage: CRMMappingStorage):
     st.write(f"**Mapping Division:** {selected['name']} ({selected['subtype']})")
     st.write(f"**Overture Division ID:** `{selected['division_id']}`")
 
-    # Check if already mapped
-    existing_by_division = storage.get_mapping_by_division_id(selected['division_id'])
-    if existing_by_division:
-        st.warning(f"⚠️ This division is already mapped to CRM ID: **{existing_by_division['system_id']}** ({existing_by_division['account_name']})")
-        if st.button("🗑️ Remove Existing Mapping", use_container_width=True):
-            storage.delete_mapping(existing_by_division['id'])
-            st.success("Mapping removed")
-            st.rerun()
-        return
+    # Check if already mapped - need to get division_id from divisions table first
+    with DatabaseStorage() as db:
+        # Get cached division by system_id
+        cached_div = db.get_division_by_system_id(selected['division_id'])
+        if cached_div:
+            existing_by_division = db.get_mapping_by_division_id(cached_div['id'])
+            if existing_by_division:
+                st.warning(f"⚠️ This division is already mapped to CRM ID: **{existing_by_division['system_id']}** ({existing_by_division['account_name']})")
+                if st.button("🗑️ Remove Existing Mapping", use_container_width=True):
+                    db.delete_mapping(existing_by_division['system_id'])
+                    st.success("Mapping removed")
+                    st.rerun()
+                return
 
     col1, col2 = st.columns(2)
 
@@ -102,41 +105,55 @@ def render_mapping_form(storage: CRMMappingStorage):
         else:
             # Try to add the mapping (DB will enforce 1:1 constraints)
             try:
-                # Get geometry from selected boundary if available
-                geometry = selected.get('geometry')
+                with DatabaseStorage() as db:
+                    # Get geometry from selected boundary if available
+                    geometry = selected.get('geometry')
 
-                storage.add_mapping(
-                    system_id=custom_id.strip(),
-                    account_name=account_name.strip(),
-                    custom_admin_level=custom_admin_level.strip(),
-                    division_id=selected['division_id'],
-                    division_name=selected['name'],
-                    overture_subtype=selected['subtype'],
-                    country=selected['country'],
-                    geometry=geometry
-                )
+                    # First, cache the division and get its DB ID
+                    division_id = db.save_division(
+                        system_id=selected['division_id'],
+                        name=selected['name'],
+                        subtype=selected['subtype'],
+                        country=selected['country'],
+                        geometry=geometry
+                    )
+
+                    # Check if system_id already exists
+                    existing_system = db.get_mapping_by_system_id(custom_id.strip())
+                    if existing_system:
+                        st.error(f"❌ CRM ID **{custom_id.strip()}** is already mapped to division: **{existing_system['division_name']}**")
+                        return
+
+                    # Check if division already mapped
+                    existing_division = db.get_mapping_by_division_id(division_id)
+                    if existing_division:
+                        st.error(f"❌ Division **{selected['name']}** is already mapped to CRM ID: **{existing_division['system_id']}**")
+                        return
+
+                    # Add the mapping
+                    db.save_mapping(
+                        system_id=custom_id.strip(),
+                        division_id=division_id,
+                        account_name=account_name.strip(),
+                        custom_admin_level=custom_admin_level.strip(),
+                        division_name=selected['name'],
+                        overture_subtype=selected['subtype'],
+                        country=selected['country'],
+                        geometry=geometry
+                    )
+                # Success - commit happened, now safe to rerun
                 st.success(f"✅ Added mapping for {selected['name']}")
                 st.rerun()
-            except sqlite3.IntegrityError as e:
-                error_msg = str(e)
-                if 'system_id' in error_msg:
-                    # Check which division this system_id is mapped to
-                    existing = storage.get_mapping_by_system_id(custom_id.strip())
-                    if existing:
-                        st.error(f"❌ CRM ID **{custom_id.strip()}** is already mapped to division: **{existing['division_name']}** ({existing['division_id']})")
-                    else:
-                        st.error(f"❌ CRM ID **{custom_id.strip()}** already exists in database")
-                elif 'division_id' in error_msg:
-                    st.error(f"❌ Division **{selected['name']}** is already mapped to another CRM account")
-                else:
-                    st.error(f"❌ Cannot add mapping: {error_msg}")
+            except Exception as e:
+                st.error(f"❌ Cannot add mapping: {e}")
 
 
-def render_mappings_table(storage: CRMMappingStorage):
+def render_mappings_table():
     """Render the table of current CRM mappings."""
     st.subheader("📊 Current Mappings")
 
-    mappings = storage.get_all_mappings()
+    with DatabaseStorage() as db:
+        mappings = db.get_all_mappings()
 
     if not mappings:
         st.info("No mappings added yet. Select a division and add mapping details above.")
@@ -187,8 +204,9 @@ def render_mappings_table(storage: CRMMappingStorage):
             if st.button("Confirm Delete", type="primary", use_container_width=True):
                 # Find the mapping to delete
                 idx = mapping_options.index(selected_to_delete)
-                mapping_id = mappings[idx]['id']
-                storage.delete_mapping(mapping_id)
+                system_id = mappings[idx]['system_id']
+                with DatabaseStorage() as db:
+                    db.delete_mapping(system_id)
                 st.session_state.show_delete_dialog = False
                 st.success("Mapping deleted")
                 st.rerun()
@@ -199,12 +217,13 @@ def render_mappings_table(storage: CRMMappingStorage):
                 st.rerun()
 
 
-def render_download_section(storage: CRMMappingStorage):
+def render_download_section():
     """Render the download functionality."""
     st.write("---")
     st.subheader("💾 Download Mappings")
 
-    mappings = storage.get_all_mappings()
+    with DatabaseStorage() as db:
+        mappings = db.get_all_mappings()
 
     if not mappings:
         st.info("No mappings to download yet.")
@@ -216,8 +235,18 @@ def render_download_section(storage: CRMMappingStorage):
         st.write(f"**Ready to download {len(mappings)} mappings**")
 
     with col2:
-        # JSON download (without DB metadata)
-        export_data = storage.export_to_json_format()
+        # JSON download (without DB metadata like created_at, updated_at)
+        export_data = []
+        for m in mappings:
+            export_data.append({
+                'division_id': m['division_id'],
+                'system_id': m['system_id'],
+                'account_name': m['account_name'],
+                'custom_admin_level': m.get('custom_admin_level', ''),
+                'division_name': m.get('division_name', ''),
+                'overture_subtype': m.get('overture_subtype', ''),
+                'country': m.get('country', '')
+            })
         json_str = json.dumps(export_data, indent=2)
         st.download_button(
             label="📥 Download JSON",
@@ -246,11 +275,13 @@ def render_download_section(storage: CRMMappingStorage):
     # Clear all button
     st.write("")
     if st.button("🗑️ Clear All Mappings", use_container_width=False):
-        if storage.clear_all_mappings():
-            st.session_state.selected_boundary = None
-            st.session_state.division_selections = []
-            st.success("All mappings cleared")
-            st.rerun()
+        with DatabaseStorage() as db:
+            for m in mappings:
+                db.delete_mapping(m['system_id'])
+        st.session_state.selected_boundary = None
+        st.session_state.division_selections = []
+        st.success("All mappings cleared")
+        st.rerun()
 
 
 def main():
@@ -264,9 +295,6 @@ def main():
         "Select divisions using the hierarchical navigator, view them on the map, and assign "
         "your own IDs, account names, and admin levels."
     )
-
-    # Initialize CRM Mapping Storage
-    mapping_storage = CRMMappingStorage(db_path="./data/crm_mappings.db")
 
     # Sidebar configuration
     with st.sidebar:
@@ -284,7 +312,8 @@ def main():
 
         # Display mapping stats
         st.subheader("📊 Mapping Statistics")
-        mapping_count = mapping_storage.get_count()
+        with DatabaseStorage() as db:
+            mapping_count = len(db.get_all_mappings())
         st.metric("Total Mappings", mapping_count)
 
     # Initialize query engine (or recreate if path changed)
@@ -308,13 +337,13 @@ def main():
     st.write("---")
 
     # Mapping form
-    render_mapping_form(mapping_storage)
+    render_mapping_form()
 
     # Mappings table
-    render_mappings_table(mapping_storage)
+    render_mappings_table()
 
     # Download section
-    render_download_section(mapping_storage)
+    render_download_section()
 
 
 if __name__ == "__main__":

@@ -10,8 +10,7 @@ import json
 import os
 
 from src.query_engine import create_query_engine
-from src.list_storage import ListStorage
-from src.crm_mapping_storage import CRMMappingStorage
+from src.database_storage import DatabaseStorage
 
 page_title = "Auto List Builder"
 page_emoji = "🤖"
@@ -151,7 +150,7 @@ def render_division_selector(query_engine):
     return None
 
 
-def render_list_generation_section(query_engine, storage: CRMMappingStorage):
+def render_list_generation_section(query_engine, ):
     """Render the list generation controls."""
     st.subheader("🤖 Auto-Generate List")
 
@@ -204,29 +203,46 @@ def render_list_generation_section(query_engine, storage: CRMMappingStorage):
 
                 else:  # Admin Hierarchy
                     # Query SQLite for admin relationships (reports_to only)
-                    relationships = storage.get_children(parent['division_id'])
+                    with DatabaseStorage() as db:
+                        # Get parent's internal DB ID
+                        parent_div = db.get_division_by_system_id(parent['division_id'])
+                        if not parent_div:
+                            st.warning(f"Parent division not found in cache: {parent['name']}")
+                            st.info("Add relationships for this division in Organizational Hierarchy first")
+                            return
 
-                    # Filter for reports_to relationships only
-                    reports_to_rels = [r for r in relationships if r['relationship_type'] == 'reports_to']
+                        # Get all relationships for this division
+                        all_relationships = db.get_relationships(division_id=parent_div['id'])
 
-                    if not reports_to_rels:
-                        st.warning(f"No admin hierarchy relationships (reports_to) found for {parent['name']}")
-                        st.info("Define relationships in the Organizational Hierarchy page first")
-                        return
+                        # Filter for reports_to relationships where this is the parent
+                        reports_to_rels = [
+                            r for r in all_relationships
+                            if r['relationship_type'] == 'reports_to'
+                            and r['parent_division_id'] == parent_div['id']
+                        ]
 
-                    # Fetch division details from Overture for each child
-                    boundaries = []
-                    for rel in reports_to_rels:
-                        child_div = query_engine.get_division_by_id(rel['child_division_id'])
-                        if child_div:
-                            boundaries.append({
-                                'division_id': child_div['division_id'],
-                                'name': child_div['name'],
-                                'subtype': child_div['subtype'],
-                                'country': child_div['country']
-                            })
+                        if not reports_to_rels:
+                            st.warning(f"No admin hierarchy relationships (reports_to) found for {parent['name']}")
+                            st.info("Define relationships in the Organizational Hierarchy page first")
+                            return
 
-                    st.session_state.generated_list = boundaries
+                        # Fetch division details from Overture for each child
+                        boundaries = []
+                        for rel in reports_to_rels:
+                            # Get child division from cache to get its system_id
+                            child_cached = db.get_division(rel['child_division_id'])
+                            if child_cached:
+                                # Query Overture for full details
+                                child_div = query_engine.get_division_by_id(child_cached['system_id'])
+                                if child_div:
+                                    boundaries.append({
+                                        'division_id': child_div['division_id'],
+                                        'name': child_div['name'],
+                                        'subtype': child_div['subtype'],
+                                        'country': child_div['country']
+                                    })
+
+                        st.session_state.generated_list = boundaries
                     st.success(f"✅ Generated list with {len(boundaries)} divisions from admin hierarchy")
                     st.rerun()
 
@@ -259,7 +275,7 @@ def render_generated_list_section():
     )
 
 
-def render_save_section(storage: ListStorage):
+def render_save_section():
     """Render save functionality for generated lists."""
     st.write("---")
     st.subheader("💾 Save Generated List")
@@ -298,13 +314,34 @@ def render_save_section(storage: ListStorage):
             if not list_name.strip():
                 st.error("Please enter a list name")
             else:
-                list_id = storage.save_list(
-                    list_name=list_name,
-                    description=description,
-                    boundaries=st.session_state.generated_list
-                )
-                st.success(f"List saved successfully! ID: {list_id}")
-                st.rerun()
+                try:
+                    with DatabaseStorage() as db:
+                        # Cache divisions and collect their IDs
+                        division_ids = []
+                        for boundary in st.session_state.generated_list:
+                            division_id = db.save_division(
+                                system_id=boundary['division_id'],
+                                name=boundary['name'],
+                                subtype=boundary.get('subtype', ''),
+                                country=boundary.get('country', ''),
+                                geometry=boundary.get('geometry', {})
+                            )
+                            division_ids.append(division_id)
+
+                        # Create the list
+                        list_id = db.create_list(
+                            name=list_name,
+                            list_type='division',
+                            item_ids=division_ids,
+                            notes=description
+                        )
+                        st.success(f"List saved successfully! ID: {list_id}")
+                except ValueError as e:
+                    st.error(str(e))
+                except Exception as e:
+                    st.error(f"Error saving list: {e}")
+                else:
+                    st.rerun()
 
     with col_b:
         # Download button
@@ -324,58 +361,86 @@ def render_save_section(storage: ListStorage):
         )
 
 
-def render_saved_lists_sidebar(storage: ListStorage):
+def render_saved_lists_sidebar():
     """Render saved lists in sidebar."""
     st.sidebar.header("📚 Saved Lists")
 
-    saved_lists = storage.list_all_lists()
+    with DatabaseStorage() as db:
+        saved_lists = db.get_all_lists(list_type='division')
 
     if not saved_lists:
         st.sidebar.info("No saved lists yet")
         return
 
     for list_info in saved_lists:
-        with st.sidebar.expander(f"📄 {list_info['list_name']}"):
-            st.write(f"**Boundaries:** {list_info['boundary_count']}")
+        # Get boundary count
+        with DatabaseStorage() as db:
+            boundaries = db.get_list_items(list_info['id'])
+        boundary_count = len(boundaries)
+
+        with st.sidebar.expander(f"📄 {list_info['name']}"):
+            st.write(f"**Boundaries:** {boundary_count}")
             st.write(f"**Created:** {list_info['created_at'][:10]}")
-            if list_info['description']:
-                st.write(f"**Description:** {list_info['description']}")
+            if list_info.get('notes'):
+                st.write(f"**Description:** {list_info['notes']}")
 
             col1, col2 = st.columns(2)
             with col1:
-                if st.button("Load", key=f"load_{list_info['list_id']}", use_container_width=True):
-                    loaded_list = storage.load_list(list_info['list_id'])
-                    if loaded_list:
-                        st.session_state.generated_list = loaded_list['boundaries']
+                if st.button("Load", key=f"load_{list_info['id']}", use_container_width=True):
+                    with DatabaseStorage() as db:
+                        boundaries = db.get_list_items(list_info['id'])
+                        # Convert division objects to boundary format
+                        boundary_list = []
+                        for div in boundaries:
+                            boundary_list.append({
+                                'division_id': div['system_id'],
+                                'name': div['name'],
+                                'subtype': div.get('subtype', ''),
+                                'country': div.get('country', ''),
+                                'geometry': div.get('geometry', {})
+                            })
+
+                        st.session_state.generated_list = boundary_list
                         st.session_state.list_metadata = {
-                            'list_name': loaded_list['list_name'],
-                            'description': loaded_list['description']
+                            'list_name': list_info['name'],
+                            'description': list_info.get('notes', '')
                         }
-                        st.success(f"Loaded: {loaded_list['list_name']}")
+                        st.success(f"Loaded: {list_info['name']}")
                         st.rerun()
 
             with col2:
-                if st.button("Delete", key=f"delete_{list_info['list_id']}", use_container_width=True):
-                    if storage.delete_list(list_info['list_id']):
-                        st.success("Deleted")
-                        st.rerun()
+                if st.button("Delete", key=f"delete_{list_info['id']}", use_container_width=True):
+                    with DatabaseStorage() as db:
+                        db.delete_list(list_info['id'])
+                    st.success("Deleted")
+                    st.rerun()
 
             # Download button
-            loaded_list = storage.load_list(list_info['list_id'])
-            if loaded_list:
+            with DatabaseStorage() as db:
+                boundaries = db.get_list_items(list_info['id'])
+                boundary_list = []
+                for div in boundaries:
+                    boundary_list.append({
+                        'division_id': div['system_id'],
+                        'name': div['name'],
+                        'subtype': div.get('subtype', ''),
+                        'country': div.get('country', ''),
+                        'geometry': div.get('geometry', {})
+                    })
+
                 export_data = {
-                    'list_name': loaded_list['list_name'],
-                    'description': loaded_list['description'],
-                    'boundary_count': len(loaded_list['boundaries']),
-                    'boundaries': loaded_list['boundaries']
+                    'list_name': list_info['name'],
+                    'description': list_info.get('notes', ''),
+                    'boundary_count': len(boundary_list),
+                    'boundaries': boundary_list
                 }
                 json_str = json.dumps(export_data, indent=2)
                 st.download_button(
                     label="📥 Download",
                     data=json_str,
-                    file_name=f"{list_info['list_name'].replace(' ', '_')}.json",
+                    file_name=f"{list_info['name'].replace(' ', '_')}.json",
                     mime="application/json",
-                    key=f"download_{list_info['list_id']}",
+                    key=f"download_{list_info['id']}",
                     use_container_width=True
                 )
 
@@ -392,10 +457,6 @@ def main():
         "or admin hierarchy (your custom organizational relationships)."
     )
 
-    # Initialize storage
-    list_storage = ListStorage(data_dir="./list_data")
-    mapping_storage = CRMMappingStorage(db_path="./data/crm_mappings.db")
-
     # Sidebar configuration
     with st.sidebar:
         st.header("⚙️ Configuration")
@@ -411,7 +472,7 @@ def main():
         st.write("---")
 
         # Show saved lists
-        render_saved_lists_sidebar(list_storage)
+        render_saved_lists_sidebar()
 
     # Initialize query engine
     if (st.session_state.query_engine is None or
@@ -431,7 +492,7 @@ def main():
         render_division_selector(st.session_state.query_engine)
 
     with col2:
-        render_list_generation_section(st.session_state.query_engine, mapping_storage)
+        render_list_generation_section(st.session_state.query_engine)
 
     st.write("---")
 
@@ -439,7 +500,7 @@ def main():
     render_generated_list_section()
 
     # Save section
-    render_save_section(list_storage)
+    render_save_section()
 
 
 if __name__ == "__main__":

@@ -10,7 +10,7 @@ import pandas as pd
 import os
 
 from src.query_engine import create_query_engine
-from src.list_storage import ListStorage
+from src.database_storage import DatabaseStorage
 from src.components import render_boundary_selector, render_map_section
 
 page_title = "Overture Admin Boundary List Builder"
@@ -120,7 +120,7 @@ def render_list_management():
         st.info("No boundaries added yet. Select and add boundaries using the filters above.")
 
 
-def render_save_section(storage: ListStorage):
+def render_save_section():
     """Render the save functionality."""
     st.write("---")
 
@@ -148,63 +148,116 @@ def render_save_section(storage: ListStorage):
             elif not st.session_state.current_list['boundaries']:
                 st.error("Cannot save an empty list")
             else:
-                # Save the list
-                list_id = storage.save_list(
-                    list_name=st.session_state.current_list['list_name'],
-                    description=st.session_state.current_list['description'],
-                    boundaries=st.session_state.current_list['boundaries']
-                )
-                st.success(f"List saved successfully! ID: {list_id}")
-                st.rerun()
+                try:
+                    with DatabaseStorage() as db:
+                        # Cache divisions and collect their IDs
+                        division_ids = []
+                        for boundary in st.session_state.current_list['boundaries']:
+                            division_id = db.save_division(
+                                system_id=boundary['division_id'],
+                                name=boundary['name'],
+                                subtype=boundary.get('subtype', ''),
+                                country=boundary.get('country', ''),
+                                geometry=boundary.get('geometry', {})
+                            )
+                            division_ids.append(division_id)
+
+                        # Create the list
+                        list_id = db.create_list(
+                            name=st.session_state.current_list['list_name'],
+                            list_type='division',
+                            item_ids=division_ids,
+                            notes=st.session_state.current_list['description']
+                        )
+                        st.success(f"List saved successfully! ID: {list_id}")
+                except ValueError as e:
+                    st.error(str(e))
+                except Exception as e:
+                    st.error(f"Error saving list: {e}")
+                else:
+                    st.rerun()
 
 
-def render_saved_lists_sidebar(storage: ListStorage):
+def render_saved_lists_sidebar():
     """Render saved lists in sidebar."""
     st.sidebar.header("📚 Saved Lists")
 
-    saved_lists = storage.list_all_lists()
+    with DatabaseStorage() as db:
+        saved_lists = db.get_all_lists(list_type='division')
 
     if not saved_lists:
         st.sidebar.info("No saved lists yet")
         return
 
     for list_info in saved_lists:
-        with st.sidebar.expander(f"📄 {list_info['list_name']}"):
-            st.write(f"**Boundaries:** {list_info['boundary_count']}")
+        # Get boundary count
+        with DatabaseStorage() as db:
+            boundaries = db.get_list_items(list_info['id'])
+        boundary_count = len(boundaries)
+
+        with st.sidebar.expander(f"📄 {list_info['name']}"):
+            st.write(f"**Boundaries:** {boundary_count}")
             st.write(f"**Created:** {list_info['created_at'][:10]}")
-            if list_info['description']:
-                st.write(f"**Description:** {list_info['description']}")
+            if list_info.get('notes'):
+                st.write(f"**Description:** {list_info['notes']}")
 
             col1, col2 = st.columns(2)
             with col1:
-                if st.button("Load", key=f"load_{list_info['list_id']}", use_container_width=True):
-                    loaded_list = storage.load_list(list_info['list_id'])
-                    if loaded_list:
+                if st.button("Load", key=f"load_{list_info['id']}", use_container_width=True):
+                    with DatabaseStorage() as db:
+                        boundaries = db.get_list_items(list_info['id'])
+                        # Convert division objects to boundary format
+                        boundary_list = []
+                        for div in boundaries:
+                            boundary_list.append({
+                                'division_id': div['system_id'],
+                                'name': div['name'],
+                                'subtype': div.get('subtype', ''),
+                                'country': div.get('country', ''),
+                                'geometry': div.get('geometry', {})
+                            })
+
                         st.session_state.current_list = {
-                            'list_name': loaded_list['list_name'],
-                            'description': loaded_list['description'],
-                            'boundaries': loaded_list['boundaries']
+                            'list_name': list_info['name'],
+                            'description': list_info.get('notes', ''),
+                            'boundaries': boundary_list
                         }
-                        st.success(f"Loaded: {loaded_list['list_name']}")
+                        st.success(f"Loaded: {list_info['name']}")
                         st.rerun()
 
             with col2:
-                if st.button("Delete", key=f"delete_{list_info['list_id']}", use_container_width=True):
-                    if storage.delete_list(list_info['list_id']):
-                        st.success("Deleted")
-                        st.rerun()
+                if st.button("Delete", key=f"delete_{list_info['id']}", use_container_width=True):
+                    with DatabaseStorage() as db:
+                        db.delete_list(list_info['id'])
+                    st.success("Deleted")
+                    st.rerun()
 
             # Download button
-            loaded_list = storage.load_list(list_info['list_id'])
-            if loaded_list:
+            with DatabaseStorage() as db:
+                boundaries = db.get_list_items(list_info['id'])
+                boundary_list = []
+                for div in boundaries:
+                    boundary_list.append({
+                        'division_id': div['system_id'],
+                        'name': div['name'],
+                        'subtype': div.get('subtype', ''),
+                        'country': div.get('country', ''),
+                        'geometry': div.get('geometry', {})
+                    })
+
+                export_data = {
+                    'list_name': list_info['name'],
+                    'description': list_info.get('notes', ''),
+                    'boundaries': boundary_list
+                }
                 import json
-                json_str = json.dumps(loaded_list, indent=2, ensure_ascii=False)
+                json_str = json.dumps(export_data, indent=2, ensure_ascii=False)
                 st.download_button(
                     label="📥 Download",
                     data=json_str,
-                    file_name=f"{list_info['list_name'].replace(' ', '_')}.json",
+                    file_name=f"{list_info['name'].replace(' ', '_')}.json",
                     mime="application/json",
-                    key=f"download_{list_info['list_id']}",
+                    key=f"download_{list_info['id']}",
                     use_container_width=True
                 )
 
@@ -231,11 +284,8 @@ def main():
 
         st.write("---")
 
-        # Initialize components
-        storage = ListStorage(data_dir="./list_data")
-
         # Show saved lists
-        render_saved_lists_sidebar(storage)
+        render_saved_lists_sidebar()
 
     # Initialize query engine (or recreate if path changed)
     if (st.session_state.query_engine is None or
@@ -261,7 +311,7 @@ def main():
     render_list_management()
 
     # Save section
-    render_save_section(storage)
+    render_save_section()
 
     # Footer
     st.write("---")
