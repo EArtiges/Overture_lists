@@ -242,8 +242,9 @@ def render_relationship_form(query_engine):
                         parent_division_id=parent_db_id,
                         relationship_type=relationship_type.strip()
                     )
-                    st.success(f"✅ Added relationship: {child['name']} → {parent['name']} ({relationship_type})")
-                    st.rerun()
+                # Success - commit happened, now safe to rerun
+                st.success(f"✅ Added relationship: {child['name']} → {parent['name']} ({relationship_type})")
+                st.rerun()
             except ValueError as e:
                 st.error(f"❌ {str(e)}")
             except Exception as e:

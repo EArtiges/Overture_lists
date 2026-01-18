@@ -141,8 +141,9 @@ def render_mapping_form():
                         country=selected['country'],
                         geometry=geometry
                     )
-                    st.success(f"✅ Added mapping for {selected['name']}")
-                    st.rerun()
+                # Success - commit happened, now safe to rerun
+                st.success(f"✅ Added mapping for {selected['name']}")
+                st.rerun()
             except Exception as e:
                 st.error(f"❌ Cannot add mapping: {e}")
 
