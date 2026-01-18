@@ -279,6 +279,7 @@ def render_list_selector_sidebar():
                     loaded_list = {
                         'list_name': selected_list['list_name'],
                         'description': selected_list.get('description', ''),
+                        'created_at': selected_list.get('created_at', ''),
                         'boundaries': boundaries
                     }
                 else:
@@ -291,6 +292,7 @@ def render_list_selector_sidebar():
                     loaded_list = {
                         'list_name': selected_list['list_name'],
                         'description': selected_list.get('description', ''),
+                        'created_at': selected_list.get('created_at', ''),
                         'boundaries': clients  # Using 'boundaries' key for compatibility
                     }
 
