@@ -233,7 +233,6 @@ def render_list_selector_sidebar():
     if boundary_lists:
         list_options.append("--- Boundary Lists ---")
         for lst in boundary_lists:
-            f"{lst['source_dir']}|{lst['list_id']}"
             label = f"{lst['list_name']} ({lst['boundary_count']} items)"
             list_options.append(label)
             list_map[label] = lst
@@ -241,7 +240,6 @@ def render_list_selector_sidebar():
     if crm_lists:
         list_options.append("--- CRM Client Lists ---")
         for lst in crm_lists:
-            f"{lst['source_dir']}|{lst['list_id']}"
             label = f"{lst['list_name']} ({lst['boundary_count']} items)"
             list_options.append(label)
             list_map[label] = lst
