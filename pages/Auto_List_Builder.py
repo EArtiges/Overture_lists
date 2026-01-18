@@ -203,29 +203,46 @@ def render_list_generation_section(query_engine, ):
 
                 else:  # Admin Hierarchy
                     # Query SQLite for admin relationships (reports_to only)
-                    relationships = storage.get_children(parent['division_id'])
+                    with DatabaseStorage() as db:
+                        # Get parent's internal DB ID
+                        parent_div = db.get_division_by_system_id(parent['division_id'])
+                        if not parent_div:
+                            st.warning(f"Parent division not found in cache: {parent['name']}")
+                            st.info("Add relationships for this division in Organizational Hierarchy first")
+                            return
 
-                    # Filter for reports_to relationships only
-                    reports_to_rels = [r for r in relationships if r['relationship_type'] == 'reports_to']
+                        # Get all relationships for this division
+                        all_relationships = db.get_relationships(division_id=parent_div['id'])
 
-                    if not reports_to_rels:
-                        st.warning(f"No admin hierarchy relationships (reports_to) found for {parent['name']}")
-                        st.info("Define relationships in the Organizational Hierarchy page first")
-                        return
+                        # Filter for reports_to relationships where this is the parent
+                        reports_to_rels = [
+                            r for r in all_relationships
+                            if r['relationship_type'] == 'reports_to'
+                            and r['parent_division_id'] == parent_div['id']
+                        ]
 
-                    # Fetch division details from Overture for each child
-                    boundaries = []
-                    for rel in reports_to_rels:
-                        child_div = query_engine.get_division_by_id(rel['child_division_id'])
-                        if child_div:
-                            boundaries.append({
-                                'division_id': child_div['division_id'],
-                                'name': child_div['name'],
-                                'subtype': child_div['subtype'],
-                                'country': child_div['country']
-                            })
+                        if not reports_to_rels:
+                            st.warning(f"No admin hierarchy relationships (reports_to) found for {parent['name']}")
+                            st.info("Define relationships in the Organizational Hierarchy page first")
+                            return
 
-                    st.session_state.generated_list = boundaries
+                        # Fetch division details from Overture for each child
+                        boundaries = []
+                        for rel in reports_to_rels:
+                            # Get child division from cache to get its system_id
+                            child_cached = db.get_division(rel['child_division_id'])
+                            if child_cached:
+                                # Query Overture for full details
+                                child_div = query_engine.get_division_by_id(child_cached['system_id'])
+                                if child_div:
+                                    boundaries.append({
+                                        'division_id': child_div['division_id'],
+                                        'name': child_div['name'],
+                                        'subtype': child_div['subtype'],
+                                        'country': child_div['country']
+                                    })
+
+                        st.session_state.generated_list = boundaries
                     st.success(f"✅ Generated list with {len(boundaries)} divisions from admin hierarchy")
                     st.rerun()
 
