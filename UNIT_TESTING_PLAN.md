@@ -60,17 +60,15 @@ class TestDivision:
     - test_division_requires_system_id()
     - test_division_name_validation()
     - test_division_country_code_format()
-    - test_division_admin_level_range()  # 1-4
-    - test_division_with_parent_relationship()
     - test_division_geometry_optional()
+    - test_division_geometry_json_serialization()
 ```
 
 **Business Rules to Test:**
 - ✓ Division must have unique system_id
 - ✓ Division must have non-empty name
-- ✓ Admin level must be 1-4
-- ✓ Country divisions (admin_level=1) have no parent
-- ✓ Division can have 0 or 1 parent, but many children
+- ✓ Geometry can be null or valid GeoJSON
+- ✓ Division properties (system_id, name, subtype, country) are immutable once created
 
 ---
 
@@ -115,7 +113,7 @@ class TestList:
 #### **CRM Mapping Entity**
 **Domain Concepts:**
 - 1:1 mapping between Division and CRM Account
-- Has custom metadata (account_name, custom_admin_level)
+- Has custom metadata (account_name, custom_admin_level as text label)
 - Caches geometry for performance
 
 **Test Cases:**
@@ -127,7 +125,7 @@ class TestCRMMapping:
     - test_one_division_one_mapping()  # 1:1 constraint
     - test_mapping_requires_system_id()
     - test_mapping_requires_division_id()
-    - test_mapping_with_custom_admin_level()
+    - test_mapping_with_custom_admin_level_text()  # Text like "Regional Office"
     - test_mapping_geometry_caching()
     - test_update_mapping_metadata()
     - test_delete_mapping_cascade()  # If division deleted
@@ -136,7 +134,7 @@ class TestCRMMapping:
 **Business Rules to Test:**
 - ✓ Each division can have max 1 CRM mapping
 - ✓ System_id must be unique (CRM account ID)
-- ✓ Custom admin level overrides division's admin_level
+- ✓ Custom admin level is free-text label (e.g., "Regional Office", "Sales Territory")
 - ✓ Geometry cached from division
 - ✓ Deleting division deletes mapping
 
@@ -144,10 +142,10 @@ class TestCRMMapping:
 
 #### **Relationship Entity**
 **Domain Concepts:**
-- Organizational hierarchy between divisions
+- Organizational hierarchy between divisions (many-to-many)
 - Types: 'reports_to', 'collaborates_with'
 - Directional (parent → child)
-- Prevents cycles (no self-reporting)
+- Independent of Overture's parent_division_id (our own business rules)
 
 **Test Cases:**
 ```python
@@ -158,18 +156,20 @@ class TestRelationship:
     - test_create_collaborates_with_relationship()
     - test_relationship_requires_parent_and_child()
     - test_relationship_requires_valid_type()
-    - test_cannot_create_self_relationship()  # Division can't report to itself
+    - test_cannot_create_self_relationship()  # DB CHECK constraint enforces this
     - test_unique_relationship_constraint()  # Same parent+child+type
     - test_can_have_multiple_relationship_types()  # Same pair, different types
     - test_delete_division_cascades_relationships()
+    - test_many_to_many_relationships_allowed()
 ```
 
 **Business Rules to Test:**
-- ✓ Parent and child must be different divisions
-- ✓ Relationship type must be valid enum
+- ✓ Self-relationships prevented (CHECK: parent_division_id != child_division_id)
+- ✓ Relationship type must be valid enum ('reports_to' or 'collaborates_with')
 - ✓ (parent, child, type) tuple must be unique
 - ✓ Same pair can have multiple relationship types
-- ✓ Deleting division deletes all its relationships
+- ✓ Deleting division deletes all its relationships (CASCADE)
+- ✓ Many-to-many relationships are allowed (division can have multiple parents/children)
 
 ---
 
@@ -201,28 +201,27 @@ class TestGeometryJSON:
 
 #### **Hierarchy Service**
 **Domain Concepts:**
-- Navigate spatial hierarchies (Overture parent_division_id)
 - Navigate admin hierarchies (user-defined relationships)
-- Recursively collect descendants
+- Collect immediate children only (one level below root)
+- Support filtering by relationship type
 
 **Test Cases:**
 ```python
 # tests/domain/test_hierarchy_service.py
 
 class TestHierarchyService:
-    - test_get_spatial_descendants_single_level()
-    - test_get_spatial_descendants_recursive()
-    - test_get_admin_descendants_via_relationships()
-    - test_detect_circular_relationships()
-    - test_empty_hierarchy()
+    - test_get_admin_children_via_relationships()
+    - test_get_children_by_relationship_type()  # Filter by 'reports_to' or 'collaborates_with'
+    - test_empty_hierarchy()  # Division with no children
     - test_mixed_relationship_types()
+    - test_multiple_parents()  # Child can have many parents
 ```
 
 **Business Rules to Test:**
-- ✓ Spatial hierarchy follows parent_division_id
 - ✓ Admin hierarchy follows relationships table
-- ✓ Recursion stops at leaf nodes
-- ✓ Circular relationships handled gracefully
+- ✓ Only collect immediate children (one level below root)
+- ✓ Can filter by relationship type
+- ✓ Division can have multiple parents (many-to-many)
 
 ---
 
@@ -269,11 +268,11 @@ class TestAddDivisionToListUseCase:
 #### **GenerateListFromHierarchyUseCase**
 ```python
 class TestGenerateListFromHierarchyUseCase:
-    - test_generate_from_spatial_hierarchy()
     - test_generate_from_admin_hierarchy()
-    - test_generate_empty_hierarchy()
+    - test_generate_empty_hierarchy()  # Root with no children
     - test_generate_includes_root_division()
-    - test_generate_with_max_depth_limit()
+    - test_generate_one_level_below_root()  # Only immediate children
+    - test_generate_with_relationship_type_filter()
 ```
 
 #### **CreateCRMMappingUseCase**
@@ -289,8 +288,10 @@ class TestCreateCRMMappingUseCase:
 ```python
 class TestCreateRelationshipUseCase:
     - test_create_reports_to_relationship()
-    - test_create_self_relationship_fails()
+    - test_create_collaborates_with_relationship()
+    - test_create_self_relationship_fails()  # DB CHECK constraint
     - test_create_duplicate_relationship_fails()
+    - test_create_multiple_relationship_types_for_same_pair()
 ```
 
 ---
@@ -309,9 +310,8 @@ class TestDatabaseStorageLists:
     - test_get_list_by_id()
     - test_get_all_lists()
     - test_get_lists_by_type()
-    - test_update_list_name()
     - test_delete_list_cascades_items()
-    - test_hash_uniqueness_constraint()
+    - test_hash_uniqueness_constraint()  # Hash from name+type, immutable
     - test_transaction_rollback_on_error()
     - test_concurrent_list_creation()  # Race conditions
 ```
@@ -383,20 +383,7 @@ class TestOvertureQueryEngine:
 
 ---
 
-### 3.3 CRM Client Storage
-
-```python
-# tests/infrastructure/test_crm_client_storage.py
-
-class TestCRMClientStorage:
-    - test_load_clients_from_json()
-    - test_get_countries()
-    - test_filter_by_country()
-    - test_validate_client_data()
-    - test_handle_missing_file()
-    - test_handle_invalid_json()
-    - test_handle_missing_required_fields()
-```
+**Note:** CRM Client Storage tests are omitted as the JSON file is temporary and will be replaced with real CRM API integration.
 
 ---
 
@@ -441,8 +428,10 @@ def sample_country():
         name="United States",
         subtype="country",
         country="US",
-        admin_level=1,
-        parent_division_id=None,
+        # admin_level not stored in divisions table
+        # admin_level=1,
+        # parent_division_id not stored in divisions table
+        # parent_division_id=None,
         geometry_json=None
     )
 
@@ -453,8 +442,10 @@ def sample_state():
         name="California",
         subtype="region",
         country="US",
-        admin_level=2,
-        parent_division_id="0858d7df-4c21-6d95-ffff-aadc92e00b0a",
+        # admin_level not stored in divisions table
+        # admin_level=2,
+        # parent_division_id not stored in divisions table
+        # parent_division_id="0858d7df-4c21-6d95-ffff-aadc92e00b0a",
         geometry_json=None
     )
 
@@ -465,8 +456,10 @@ def sample_county():
         name="Los Angeles County",
         subtype="county",
         country="US",
-        admin_level=3,
-        parent_division_id="0858d7e2-aa18-ae63-ffff-e4dc0fb91919",
+        # admin_level not stored in divisions table
+        # admin_level=3,
+        # parent_division_id not stored in divisions table
+        # parent_division_id="0858d7e2-aa18-ae63-ffff-e4dc0fb91919",
         geometry_json=load_test_geometry("la_county.geojson")
     )
 
@@ -521,7 +514,8 @@ def sample_crm_mapping(sample_state):
 @pytest.fixture
 def sample_reports_to_relationship(sample_county, sample_state):
     return Relationship(
-        parent_division_id=sample_state.system_id,
+        # parent_division_id not stored in divisions table
+        # parent_division_id=sample_state.system_id,
         child_division_id=sample_county.system_id,
         relationship_type="reports_to"
     )
