@@ -7,7 +7,7 @@ Manages loading and filtering of CRM client data from JSON files.
 import json
 import os
 import streamlit as st
-from typing import List, Dict, Optional
+from typing import List, Dict
 
 
 class CRMClientStorage:

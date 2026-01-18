@@ -9,9 +9,8 @@ import streamlit as st
 import pandas as pd
 import folium
 from streamlit_folium import st_folium
-import json
 import os
-from typing import List, Dict, Optional
+from typing import List, Dict
 
 from src.list_storage import ListStorage
 from src.query_engine import create_query_engine
@@ -224,7 +223,7 @@ def render_list_selector_sidebar():
     if boundary_lists:
         list_options.append("--- Boundary Lists ---")
         for lst in boundary_lists:
-            key = f"{lst['source_dir']}|{lst['list_id']}"
+            f"{lst['source_dir']}|{lst['list_id']}"
             label = f"{lst['list_name']} ({lst['boundary_count']} items)"
             list_options.append(label)
             list_map[label] = lst
@@ -232,7 +231,7 @@ def render_list_selector_sidebar():
     if crm_lists:
         list_options.append("--- CRM Client Lists ---")
         for lst in crm_lists:
-            key = f"{lst['source_dir']}|{lst['list_id']}"
+            f"{lst['source_dir']}|{lst['list_id']}"
             label = f"{lst['list_name']} ({lst['boundary_count']} items)"
             list_options.append(label)
             list_map[label] = lst

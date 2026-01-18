@@ -8,7 +8,6 @@ import streamlit as st
 import pandas as pd
 import json
 import os
-from typing import List, Dict
 
 from src.query_engine import create_query_engine
 from src.list_storage import ListStorage

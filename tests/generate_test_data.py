@@ -5,8 +5,6 @@ Generates sample Parquet files mimicking Overture Maps structure for local testi
 """
 
 import duckdb
-import json
-from datetime import datetime
 
 
 def generate_test_parquet(output_path: str = "./tests/test_boundaries.parquet"):
