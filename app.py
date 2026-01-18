@@ -30,10 +30,11 @@ with col1:
     Create and manage lists of administrative boundaries.
 
     **Features:**
-    - Hierarchical boundary selection
+    - Hierarchical boundary selection (countries as proper divisions)
     - Interactive map visualization
-    - Save and load boundary lists
-    - Download lists as JSON files
+    - Save lists to SQLite database
+    - Persistent storage across sessions
+    - Duplicate detection via hash
 
     **Use Case:** Building collections of administrative regions for analysis or reporting.
     """)
@@ -47,7 +48,8 @@ with col2:
     **Features:**
     - Hierarchical division navigation
     - Assign System ID, Account Name, Admin Level
-    - Export as JSON (with geometry) or CSV
+    - SQLite persistence with cached division geometry
+    - View, delete, and manage mappings
 
     **Use Case:** Linking geographic territories to CRM accounts and sales regions.
     """)
@@ -61,8 +63,9 @@ with col3:
     **Features:**
     - Country-based client filtering
     - Territory map visualization
-    - Build and export client lists
-    - JSON export for downstream use
+    - Save client lists to SQLite database
+    - Load from mock clients.json data
+    - Persistent storage across sessions
 
     **Use Case:** Creating targeted client lists for campaigns, analysis, or reporting.
     """)
@@ -90,15 +93,16 @@ with col4:
 with col5:
     st.subheader("🤖 Auto List Builder")
     st.write("""
-    Automatically generate lists based on criteria.
+    Automatically generate lists from hierarchical relationships.
 
     **Features:**
-    - Automated boundary collection
-    - Smart filtering and selection
-    - Batch list generation
-    - Quick export capabilities
+    - Generate lists from spatial hierarchies (child divisions)
+    - Generate lists from admin hierarchies (org relationships)
+    - Select parent division as starting point
+    - Automatic collection of all children
+    - Save generated lists to database
 
-    **Use Case:** Rapidly creating lists based on predefined rules.
+    **Use Case:** Rapidly creating lists based on geographic or organizational hierarchies.
     """)
     st.info("👈 Navigate to **Auto List Builder** from the sidebar")
 
@@ -128,12 +132,14 @@ st.write("""
 4. **Export** your work as needed
 
 The six tools work together in a complete workflow:
-- **List Builder**: Curate collections of Overture boundaries
+- **List Builder**: Manually curate collections of Overture boundaries
 - **CRM Mapping**: Link boundaries to your CRM accounts with custom metadata
 - **CRM Client List**: Build targeted lists from your mapped clients
 - **Organizational Hierarchy**: Define reporting relationships between divisions
-- **Auto List Builder**: Rapidly generate lists based on criteria
-- **List Visualizer**: Visualize and explore your saved lists on maps
+- **Auto List Builder**: Automatically generate lists from spatial or admin hierarchies
+- **List Visualizer**: Visualize and explore your saved lists on interactive maps
+
+All data is stored in a unified SQLite database with proper foreign keys and constraints.
 """)
 
 st.write("---")
