@@ -12,7 +12,7 @@ from streamlit_folium import st_folium
 import os
 from typing import List, Dict
 
-from src.list_storage import ListStorage
+from src.database_storage import DatabaseStorage
 from src.query_engine import create_query_engine
 
 # Constants
@@ -69,7 +69,7 @@ def discover_all_lists() -> List[Dict]:
 
     # Boundary lists
     try:
-        list_storage = ListStorage(data_dir="./list_data")
+        list_storage = DatabaseStorage()
         boundary_lists = list_storage.list_all_lists()
         for lst in boundary_lists:
             lst['source_dir'] = './list_data'

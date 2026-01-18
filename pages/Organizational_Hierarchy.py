@@ -8,9 +8,8 @@ import streamlit as st
 import pandas as pd
 import json
 import os
-import sqlite3
 
-from src.crm_mapping_storage import CRMMappingStorage
+from src.database_storage import DatabaseStorage
 from src.query_engine import create_query_engine
 
 page_title = "Organizational Hierarchy"
@@ -161,7 +160,7 @@ def render_division_selector(query_engine, prefix: str, label: str):
     return None
 
 
-def render_relationship_form(storage: CRMMappingStorage, query_engine):
+def render_relationship_form(query_engine):
     """Render the form to add organizational relationships."""
     st.subheader("🔗 Define Relationship")
 
@@ -220,29 +219,43 @@ def render_relationship_form(storage: CRMMappingStorage, query_engine):
             st.error("Please specify a relationship type")
         else:
             try:
-                storage.add_relationship(
-                    child_division_id=child['division_id'],
-                    parent_division_id=parent['division_id'],
-                    relationship_type=relationship_type.strip(),
-                    notes=notes.strip() if notes.strip() else None
-                )
-                st.success(f"✅ Added relationship: {child['name']} → {parent['name']} ({relationship_type})")
-                st.rerun()
-            except sqlite3.IntegrityError as e:
-                error_msg = str(e)
-                if 'UNIQUE constraint' in error_msg:
-                    st.error(f"❌ This exact relationship already exists")
-                elif 'CHECK constraint' in error_msg:
-                    st.error(f"❌ Cannot create a relationship from a division to itself")
-                else:
-                    st.error(f"❌ Cannot add relationship: {error_msg}")
+                with DatabaseStorage() as db:
+                    # Cache divisions and get their database IDs
+                    child_db_id = db.save_division(
+                        system_id=child['division_id'],
+                        name=child['name'],
+                        subtype=child.get('subtype', ''),
+                        country=child.get('country', ''),
+                        geometry=child.get('geometry', {})
+                    )
+                    parent_db_id = db.save_division(
+                        system_id=parent['division_id'],
+                        name=parent['name'],
+                        subtype=parent.get('subtype', ''),
+                        country=parent.get('country', ''),
+                        geometry=parent.get('geometry', {})
+                    )
+
+                    # Add relationship
+                    db.add_relationship(
+                        child_division_id=child_db_id,
+                        parent_division_id=parent_db_id,
+                        relationship_type=relationship_type.strip()
+                    )
+                    st.success(f"✅ Added relationship: {child['name']} → {parent['name']} ({relationship_type})")
+                    st.rerun()
+            except ValueError as e:
+                st.error(f"❌ {str(e)}")
+            except Exception as e:
+                st.error(f"❌ Cannot add relationship: {e}")
 
 
-def render_relationships_table(storage: CRMMappingStorage, query_engine):
+def render_relationships_table(query_engine):
     """Render the table of current relationships."""
     st.subheader("📊 Current Relationships")
 
-    relationships = storage.get_all_relationships()
+    with DatabaseStorage() as db:
+        relationships = db.get_all_relationships()
 
     if not relationships:
         st.info("No relationships defined yet. Select divisions and add relationships above.")
@@ -250,28 +263,30 @@ def render_relationships_table(storage: CRMMappingStorage, query_engine):
 
     st.write(f"**Total Relationships:** {len(relationships)}")
 
-    # Fetch division names from Overture for display
+    # Fetch division names from database cache for display
     relationships_with_names = []
-    for rel in relationships:
-        # Get division metadata from Overture (cached)
-        child_div = query_engine.get_division_by_id(rel['child_division_id'])
-        parent_div = query_engine.get_division_by_id(rel['parent_division_id'])
+    with DatabaseStorage() as db:
+        for rel in relationships:
+            # Get division metadata from database cache
+            child_div = db.get_division(rel['child_division_id'])
+            parent_div = db.get_division(rel['parent_division_id'])
 
-        # Format names with fallback to ID if lookup fails
-        child_name = f"{child_div['name']} ({child_div['subtype']})" if child_div else rel['child_division_id'][:12] + '...'
-        parent_name = f"{parent_div['name']} ({parent_div['subtype']})" if parent_div else rel['parent_division_id'][:12] + '...'
+            # Format names with fallback to ID if lookup fails
+            child_name = f"{child_div['name']} ({child_div['subtype']})" if child_div else f"ID: {rel['child_division_id']}"
+            parent_name = f"{parent_div['name']} ({parent_div['subtype']})" if parent_div else f"ID: {rel['parent_division_id']}"
 
-        relationships_with_names.append({
-            'Child Division': child_name,
-            'Parent Division': parent_name,
-            'Relationship Type': rel['relationship_type'],
-            'Notes': rel.get('notes', '')[:50] if rel.get('notes') else '',
-            '_id': rel['id']
-        })
+            relationships_with_names.append({
+                'Child Division': child_name,
+                'Parent Division': parent_name,
+                'Relationship Type': rel['relationship_type'],
+                '_child_id': rel['child_division_id'],
+                '_parent_id': rel['parent_division_id'],
+                '_type': rel['relationship_type']
+            })
 
     # Create DataFrame for display
     df_display = pd.DataFrame(relationships_with_names)
-    display_columns = ['Child Division', 'Parent Division', 'Relationship Type', 'Notes']
+    display_columns = ['Child Division', 'Parent Division', 'Relationship Type']
 
     st.dataframe(
         df_display[display_columns],
@@ -302,8 +317,13 @@ def render_relationships_table(storage: CRMMappingStorage, query_engine):
         with col_a:
             if st.button("Confirm Delete", type="primary", use_container_width=True):
                 idx = rel_options.index(selected_to_delete)
-                rel_id = relationships_with_names[idx]['_id']
-                storage.delete_relationship(rel_id)
+                rel_data = relationships_with_names[idx]
+                with DatabaseStorage() as db:
+                    db.delete_relationship(
+                        parent_division_id=rel_data['_parent_id'],
+                        child_division_id=rel_data['_child_id'],
+                        relationship_type=rel_data['_type']
+                    )
                 st.session_state.show_delete_rel_dialog = False
                 st.success("Relationship deleted")
                 st.rerun()
@@ -314,12 +334,13 @@ def render_relationships_table(storage: CRMMappingStorage, query_engine):
                 st.rerun()
 
 
-def render_download_section(storage: CRMMappingStorage):
+def render_download_section():
     """Render the download functionality."""
     st.write("---")
     st.subheader("💾 Download Relationships")
 
-    relationships = storage.get_all_relationships()
+    with DatabaseStorage() as db:
+        relationships = db.get_all_relationships()
 
     if not relationships:
         st.info("No relationships to download yet.")
@@ -330,9 +351,22 @@ def render_download_section(storage: CRMMappingStorage):
     with col1:
         st.write(f"**Ready to download {len(relationships)} relationships**")
 
+    # Prepare export data
+    export_data = []
+    with DatabaseStorage() as db:
+        for rel in relationships:
+            child_div = db.get_division(rel['child_division_id'])
+            parent_div = db.get_division(rel['parent_division_id'])
+            export_data.append({
+                'child_division_id': child_div['system_id'] if child_div else rel['child_division_id'],
+                'child_division_name': child_div['name'] if child_div else '',
+                'parent_division_id': parent_div['system_id'] if parent_div else rel['parent_division_id'],
+                'parent_division_name': parent_div['name'] if parent_div else '',
+                'relationship_type': rel['relationship_type']
+            })
+
     with col2:
         # JSON download
-        export_data = storage.export_relationships_to_json()
         json_str = json.dumps(export_data, indent=2)
         st.download_button(
             label="📥 Download JSON",
@@ -359,9 +393,16 @@ def render_download_section(storage: CRMMappingStorage):
     # Clear all button
     st.write("")
     if st.button("🗑️ Clear All Relationships", use_container_width=False):
-        if storage.clear_all_relationships():
-            st.success("All relationships cleared")
-            st.rerun()
+        with DatabaseStorage() as db:
+            rels = db.get_all_relationships()
+            for rel in rels:
+                db.delete_relationship(
+                    parent_division_id=rel['parent_division_id'],
+                    child_division_id=rel['child_division_id'],
+                    relationship_type=rel['relationship_type']
+                )
+        st.success("All relationships cleared")
+        st.rerun()
 
 
 def main():
@@ -375,9 +416,6 @@ def main():
         "This allows you to capture who-reports-to-whom hierarchies that may differ from "
         "spatial containment relationships."
     )
-
-    # Initialize storage
-    mapping_storage = CRMMappingStorage(db_path="./data/crm_mappings.db")
 
     # Sidebar configuration
     with st.sidebar:
@@ -395,7 +433,8 @@ def main():
 
         # Display relationship stats
         st.subheader("📊 Relationship Statistics")
-        rel_count = mapping_storage.get_relationship_count()
+        with DatabaseStorage() as db:
+            rel_count = len(db.get_all_relationships())
         st.metric("Total Relationships", rel_count)
 
     # Initialize query engine
@@ -422,15 +461,15 @@ def main():
     st.write("---")
 
     # Relationship form
-    render_relationship_form(mapping_storage, st.session_state.query_engine)
+    render_relationship_form(st.session_state.query_engine)
 
     st.write("---")
 
     # Relationships table
-    render_relationships_table(mapping_storage, st.session_state.query_engine)
+    render_relationships_table(st.session_state.query_engine)
 
     # Download section
-    render_download_section(mapping_storage)
+    render_download_section()
 
 
 if __name__ == "__main__":

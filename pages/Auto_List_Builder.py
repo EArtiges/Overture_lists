@@ -10,8 +10,7 @@ import json
 import os
 
 from src.query_engine import create_query_engine
-from src.list_storage import ListStorage
-from src.crm_mapping_storage import CRMMappingStorage
+from src.database_storage import DatabaseStorage
 
 page_title = "Auto List Builder"
 page_emoji = "🤖"
@@ -151,7 +150,7 @@ def render_division_selector(query_engine):
     return None
 
 
-def render_list_generation_section(query_engine, storage: CRMMappingStorage):
+def render_list_generation_section(query_engine, ):
     """Render the list generation controls."""
     st.subheader("🤖 Auto-Generate List")
 
@@ -259,7 +258,7 @@ def render_generated_list_section():
     )
 
 
-def render_save_section(storage: ListStorage):
+def render_save_section():
     """Render save functionality for generated lists."""
     st.write("---")
     st.subheader("💾 Save Generated List")
@@ -324,7 +323,7 @@ def render_save_section(storage: ListStorage):
         )
 
 
-def render_saved_lists_sidebar(storage: ListStorage):
+def render_saved_lists_sidebar():
     """Render saved lists in sidebar."""
     st.sidebar.header("📚 Saved Lists")
 
@@ -392,10 +391,6 @@ def main():
         "or admin hierarchy (your custom organizational relationships)."
     )
 
-    # Initialize storage
-    list_storage = ListStorage(data_dir="./list_data")
-    mapping_storage = CRMMappingStorage(db_path="./data/crm_mappings.db")
-
     # Sidebar configuration
     with st.sidebar:
         st.header("⚙️ Configuration")
@@ -411,7 +406,7 @@ def main():
         st.write("---")
 
         # Show saved lists
-        render_saved_lists_sidebar(list_storage)
+        render_saved_lists_sidebar()
 
     # Initialize query engine
     if (st.session_state.query_engine is None or
@@ -431,7 +426,7 @@ def main():
         render_division_selector(st.session_state.query_engine)
 
     with col2:
-        render_list_generation_section(st.session_state.query_engine, mapping_storage)
+        render_list_generation_section(st.session_state.query_engine)
 
     st.write("---")
 
@@ -439,7 +434,7 @@ def main():
     render_generated_list_section()
 
     # Save section
-    render_save_section(list_storage)
+    render_save_section()
 
 
 if __name__ == "__main__":

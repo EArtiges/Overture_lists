@@ -24,6 +24,9 @@ htmlcov/
 list_data/*.json
 *.parquet
 .ignore
+*.db
+*.db-shm
+*.db-wal
 
 # IDE
 .vscode/
