@@ -14,6 +14,45 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 from database_storage import DatabaseStorage
 
 
+def pytest_sessionstart(session):
+    """
+    Auto-generate test data before running any tests.
+    This ensures test_boundaries.parquet is always up to date.
+    """
+    test_data_path = Path(__file__).parent / "test_boundaries.parquet"
+    generator_path = Path(__file__).parent / "generate_test_data.py"
+
+    # Check if test data exists and is newer than generator
+    needs_generation = True
+    if test_data_path.exists() and generator_path.exists():
+        data_mtime = test_data_path.stat().st_mtime
+        gen_mtime = generator_path.stat().st_mtime
+        if data_mtime > gen_mtime:
+            needs_generation = False
+
+    if needs_generation:
+        print(f"\n{'='*70}")
+        print("Generating test data (test_boundaries.parquet)...")
+        print(f"{'='*70}")
+
+        # Import and run the generator from project root
+        import subprocess
+        project_root = generator_path.parent.parent
+        result = subprocess.run(
+            [sys.executable, str(generator_path)],
+            cwd=str(project_root),
+            capture_output=True,
+            text=True
+        )
+
+        if result.returncode == 0:
+            print(result.stdout)
+        else:
+            print(f"Warning: Failed to generate test data: {result.stderr}")
+
+        print(f"{'='*70}\n")
+
+
 @pytest.fixture
 def test_db():
     """Create in-memory SQLite database for testing."""
