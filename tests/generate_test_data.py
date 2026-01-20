@@ -26,6 +26,7 @@ def generate_test_parquet(output_path: str = "./tests/test_boundaries.parquet"):
             'names_primary': 'United States',
             'subtype': 'country',
             'country': 'US',
+            'class': 'land',
             'parent_division_id': None,
             'geometry_wkt': 'POLYGON((-125 25, -125 49, -66 49, -66 25, -125 25))'
         },
@@ -34,6 +35,7 @@ def generate_test_parquet(output_path: str = "./tests/test_boundaries.parquet"):
             'names_primary': 'California',
             'subtype': 'region',
             'country': 'US',
+            'class': 'land',
             'parent_division_id': '0858d7df-4c21-6d95-ffff-aadc92e00b0a',
             'geometry_wkt': 'POLYGON((-124.4 32.5, -124.4 42, -114.1 42, -114.1 32.5, -124.4 32.5))'
         },
@@ -42,6 +44,7 @@ def generate_test_parquet(output_path: str = "./tests/test_boundaries.parquet"):
             'names_primary': 'Los Angeles County',
             'subtype': 'county',
             'country': 'US',
+            'class': 'land',
             'parent_division_id': '0858d7e2-aa18-ae63-ffff-e4dc0fb91919',
             'geometry_wkt': 'POLYGON((-118.668 33.704, -118.155 33.704, -118.155 34.337, -118.668 34.337, -118.668 33.704))'
         },
@@ -50,6 +53,7 @@ def generate_test_parquet(output_path: str = "./tests/test_boundaries.parquet"):
             'names_primary': 'Oregon',
             'subtype': 'region',
             'country': 'US',
+            'class': 'land',
             'parent_division_id': '0858d7df-4c21-6d95-ffff-aadc92e00b0a',
             'geometry_wkt': 'POLYGON((-124.5 42, -124.5 46.2, -116.5 46.2, -116.5 42, -124.5 42))'
         },
@@ -58,6 +62,7 @@ def generate_test_parquet(output_path: str = "./tests/test_boundaries.parquet"):
             'names_primary': 'Washington',
             'subtype': 'region',
             'country': 'US',
+            'class': 'land',
             'parent_division_id': '0858d7df-4c21-6d95-ffff-aadc92e00b0a',
             'geometry_wkt': 'POLYGON((-124.8 45.5, -124.8 49, -116.9 49, -116.9 45.5, -124.8 45.5))'
         },
@@ -66,6 +71,7 @@ def generate_test_parquet(output_path: str = "./tests/test_boundaries.parquet"):
             'names_primary': 'San Francisco County',
             'subtype': 'county',
             'country': 'US',
+            'class': 'land',
             'parent_division_id': '0858d7e2-aa18-ae63-ffff-e4dc0fb91919',
             'geometry_wkt': 'POLYGON((-122.5 37.7, -122.5 37.8, -122.3 37.8, -122.3 37.7, -122.5 37.7))'
         },
@@ -75,6 +81,7 @@ def generate_test_parquet(output_path: str = "./tests/test_boundaries.parquet"):
             'names_primary': 'United Kingdom',
             'subtype': 'country',
             'country': 'GB',
+            'class': 'land',
             'parent_division_id': None,
             'geometry_wkt': 'POLYGON((-8 50, -8 60, 2 60, 2 50, -8 50))'
         },
@@ -83,6 +90,7 @@ def generate_test_parquet(output_path: str = "./tests/test_boundaries.parquet"):
             'names_primary': 'England',
             'subtype': 'region',
             'country': 'GB',
+            'class': 'land',
             'parent_division_id': '0858d7df-5c32-7ea6-ffff-bbdc93f01c1b',
             'geometry_wkt': 'POLYGON((-6 50, -6 55, 2 55, 2 50, -6 50))'
         },
@@ -91,6 +99,7 @@ def generate_test_parquet(output_path: str = "./tests/test_boundaries.parquet"):
             'names_primary': 'Scotland',
             'subtype': 'region',
             'country': 'GB',
+            'class': 'land',
             'parent_division_id': '0858d7df-5c32-7ea6-ffff-bbdc93f01c1b',
             'geometry_wkt': 'POLYGON((-7 55, -7 59, 0 59, 0 55, -7 55))'
         },
@@ -100,6 +109,7 @@ def generate_test_parquet(output_path: str = "./tests/test_boundaries.parquet"):
             'names_primary': 'Canada',
             'subtype': 'country',
             'country': 'CA',
+            'class': 'land',
             'parent_division_id': None,
             'geometry_wkt': 'POLYGON((-141 42, -141 70, -52 70, -52 42, -141 42))'
         },
@@ -108,6 +118,7 @@ def generate_test_parquet(output_path: str = "./tests/test_boundaries.parquet"):
             'names_primary': 'Ontario',
             'subtype': 'region',
             'country': 'CA',
+            'class': 'land',
             'parent_division_id': 'ca_country',
             'geometry_wkt': 'POLYGON((-95 42, -95 57, -74 57, -74 42, -95 42))'
         },
@@ -116,6 +127,7 @@ def generate_test_parquet(output_path: str = "./tests/test_boundaries.parquet"):
             'names_primary': 'British Columbia',
             'subtype': 'region',
             'country': 'CA',
+            'class': 'land',
             'parent_division_id': 'ca_country',
             'geometry_wkt': 'POLYGON((-139 48, -139 60, -114 60, -114 48, -139 48))'
         },
@@ -129,6 +141,7 @@ def generate_test_parquet(output_path: str = "./tests/test_boundaries.parquet"):
             names_primary VARCHAR,
             subtype VARCHAR,
             country VARCHAR,
+            class VARCHAR,
             parent_division_id VARCHAR,
             geometry_wkt VARCHAR
         )
@@ -137,12 +150,13 @@ def generate_test_parquet(output_path: str = "./tests/test_boundaries.parquet"):
     # Insert data
     for row in sample_data:
         conn.execute("""
-            INSERT INTO boundaries_flat VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO boundaries_flat VALUES (?, ?, ?, ?, ?, ?, ?)
         """, [
             row['id'],
             row['names_primary'],
             row['subtype'],
             row['country'],
+            row['class'],
             row['parent_division_id'],
             row['geometry_wkt']
         ])
@@ -156,6 +170,7 @@ def generate_test_parquet(output_path: str = "./tests/test_boundaries.parquet"):
             {'primary': names_primary} AS names,
             subtype,
             country,
+            class,
             parent_division_id,
             geometry_wkt AS geometry
         FROM boundaries_flat
