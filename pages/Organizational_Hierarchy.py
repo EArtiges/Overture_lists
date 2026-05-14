@@ -33,7 +33,7 @@ def init_session_state():
     if 'parquet_path' not in st.session_state:
         st.session_state.parquet_path = os.getenv(
             'OVERTURE_PARQUET_PATH',
-            's3://overturemaps-us-west-2/release/2026-01-21.0/theme=divisions/type=division/*.parquet'
+            's3://overturemaps-us-west-2/release/2026-04-15.0/theme=divisions/type=division/*.parquet'
         )
 
     if 'query_engine' not in st.session_state:
