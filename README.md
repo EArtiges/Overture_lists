@@ -105,10 +105,11 @@ streamlit run app.py
 
 ### Parquet Data Path
 
-By default, the app connects to Overture Maps S3 data using the **divisions** theme:
+By default, the app connects to the **latest** Overture Maps release on S3 using the **divisions** theme:
 ```
-s3://overturemaps-us-west-2/release/2025-12-17.0/theme=divisions/type=division/*.parquet
+s3://overturemaps-us-west-2/release/<latest>/theme=divisions/type=division/*.parquet
 ```
+The latest release is looked up from Overture's [STAC catalog](https://stac.overturemaps.org/catalog.json) (falling back to listing the S3 bucket) and cached for 6 hours, so new monthly releases are picked up without any code change.
 
 **Important:** The `admins` theme was deprecated in mid-2024 and replaced with `divisions`. Use the divisions theme for current releases.
 
@@ -118,9 +119,9 @@ s3://overturemaps-us-west-2/release/2025-12-17.0/theme=divisions/type=division/*
 - **Legacy releases (pre-July 2024):** `theme=admins/type=*/`
 
 #### Release Versions
-Overture releases data monthly. Check [available releases](https://docs.overturemaps.org/release/) and update the date accordingly (format: `YYYY-MM-DD.0`).
+Overture releases data monthly and only keeps the most recent few releases on S3, so pinned release paths eventually stop working. See [available releases](https://docs.overturemaps.org/release/) (format: `YYYY-MM-DD.N`).
 
-You can configure a different path:
+To pin a release or use local data, set a path explicitly:
 
 **Via Environment Variable:**
 ```bash
@@ -416,12 +417,12 @@ When migrating from POC to production:
 **Common cause:** Using the deprecated `admins` theme or incorrect path pattern.
 
 **Solution:**
-1. Update your path to use the `divisions` theme:
+1. If you set `OVERTURE_PARQUET_PATH`, make sure it uses the `divisions` theme, or unset it to use the latest release automatically:
    ```
-   s3://overturemaps-us-west-2/release/2025-12-17.0/theme=divisions/type=division/*.parquet
+   s3://overturemaps-us-west-2/release/<release>/theme=divisions/type=division/*.parquet
    ```
 
-2. Verify the release date exists on [Overture releases page](https://docs.overturemaps.org/release/)
+2. If you pinned a release, verify it still exists on the [Overture releases page](https://docs.overturemaps.org/release/) (older releases are removed from S3)
 
 3. Check network access to S3 if using remote data
 

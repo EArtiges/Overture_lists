@@ -7,9 +7,9 @@ boundaries from Overture Maps Foundation data.
 
 import streamlit as st
 import pandas as pd
-import os
 
 from src.query_engine import create_query_engine
+from src.overture_release import get_default_parquet_path
 from src.database_storage import DatabaseStorage
 from src.components import render_boundary_selector, render_map_section
 
@@ -34,11 +34,12 @@ def init_session_state():
         st.session_state.selected_boundary = None
 
     if 'parquet_path' not in st.session_state:
-        # Default path - can be overridden via environment variable
-        st.session_state.parquet_path = os.getenv(
-            'OVERTURE_PARQUET_PATH',
-            's3://overturemaps-us-west-2/release/2026-04-15.0/theme=divisions/type=division/*.parquet'
-        )
+        # Latest Overture release, unless OVERTURE_PARQUET_PATH overrides it
+        try:
+            st.session_state.parquet_path = get_default_parquet_path()
+        except RuntimeError as e:
+            st.error(str(e))
+            st.stop()
 
     # Query engine instance (stateful)
     if 'query_engine' not in st.session_state:

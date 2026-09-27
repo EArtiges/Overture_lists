@@ -9,11 +9,11 @@ import streamlit as st
 import pandas as pd
 import folium
 from streamlit_folium import st_folium
-import os
 from typing import List, Dict
 
 from src.database_storage import DatabaseStorage
 from src.query_engine import create_query_engine
+from src.overture_release import get_default_parquet_path
 
 # Constants
 page_title = "List Visualizer"
@@ -49,10 +49,12 @@ def init_session_state():
         st.session_state.visible_items = set()
 
     if 'parquet_path' not in st.session_state:
-        st.session_state.parquet_path = os.getenv(
-            'OVERTURE_PARQUET_PATH',
-            's3://overturemaps-us-west-2/release/2026-04-15.0/theme=divisions/type=division/*.parquet'
-        )
+        # Latest Overture release, unless OVERTURE_PARQUET_PATH overrides it
+        try:
+            st.session_state.parquet_path = get_default_parquet_path()
+        except RuntimeError as e:
+            st.error(str(e))
+            st.stop()
 
     if 'query_engine' not in st.session_state:
         st.session_state.query_engine = None
